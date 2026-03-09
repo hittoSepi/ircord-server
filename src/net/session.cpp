@@ -545,8 +545,6 @@ void Session::handle_key_upload(const KeyUpload& ku) {
 
     spdlog::info("[{}] KEY_UPLOAD: {} OPKs uploaded by {}",
         remote_endpoint_, ku.one_time_prekeys_size(), user_id_);
-
-    send_envelope(MT_AUTH_OK, Empty());  // ack with Empty payload
 }
 
 void Session::handle_key_request(const KeyRequest& kr) {
