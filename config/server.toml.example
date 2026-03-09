@@ -1,0 +1,34 @@
+# IRCord Server Configuration
+# Copy this file to server.toml and modify as needed
+
+[server]
+# Server bind address (0.0.0.0 = all interfaces)
+host = "0.0.0.0"
+
+# Server port (6667 is the historical IRC port)
+port = 6667
+
+# Log level: debug, info, warn, error
+log_level = "info"
+
+# Maximum concurrent connections
+max_connections = 100
+
+[tls]
+# TLS certificate file (required)
+# Generate self-signed for testing:
+#   openssl req -x509 -newkey ed25519 -keyout server.key -out server.crt -days 365 -nodes
+cert_file = "./certs/server.crt"
+
+# TLS private key file (required)
+key_file = "./certs/server.key"
+
+[limits]
+# Maximum message size in bytes (64 KB default)
+max_message_bytes = 65536
+
+# Ping interval in seconds (server sends PING)
+ping_interval_sec = 30
+
+# Ping timeout in seconds (disconnect if no PONG)
+ping_timeout_sec = 60

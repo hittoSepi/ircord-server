@@ -1,0 +1,75 @@
+#pragma once
+
+#include "session.hpp"
+
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/strand.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/signal_set.hpp>
+#include <boost/asio/ssl/context.hpp>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <mutex>
+
+namespace ircord::net {
+
+// Main server class that accepts connections and manages sessions
+class Listener : public ServerContext {
+public:
+    Listener(
+        boost::asio::io_context& ioc,
+        boost::asio::ssl::context& ssl_ctx,
+        const std::string& host,
+        uint16_t port);
+
+    ~Listener() override;
+
+    // Start accepting connections
+    void run();
+
+    // Initiate graceful shutdown
+    void shutdown();
+
+    // ServerContext implementation
+    void on_session_authenticated(std::shared_ptr<Session> session) override;
+    void on_session_disconnected(std::shared_ptr<Session> session, const std::string& reason) override;
+    void broadcast(const Envelope& env, std::shared_ptr<Session> exclude = nullptr) override;
+
+    // Getters
+    int ping_interval_sec() const override { return ping_interval_sec_; }
+    int ping_timeout_sec() const override { return ping_timeout_sec_; }
+
+    // Set ping timers from config
+    void set_ping_intervals(int interval_sec, int timeout_sec);
+
+private:
+    void do_accept();
+    void on_signal(boost::system::error_code ec, int signal_number);
+    void cleanup_dead_sessions();
+
+    using Strand = boost::asio::strand<boost::asio::io_context::executor_type>;
+    using Acceptor = boost::asio::ip::tcp::acceptor;
+    using Socket = boost::asio::ip::tcp::socket;
+    using SignalSet = boost::asio::signal_set;
+
+    Strand strand_;
+    Acceptor acceptor_;
+    Socket socket_;
+    boost::asio::ssl::context& ssl_ctx_;
+    SignalSet signals_;
+
+    // Active sessions
+    std::unordered_map<std::string, std::shared_ptr<Session>> sessions_by_user_;
+    std::unordered_map<std::shared_ptr<Session>, std::string> users_by_session_;
+    std::mutex sessions_mutex_;
+
+    // Ping settings
+    int ping_interval_sec_ = 30;
+    int ping_timeout_sec_ = 60;
+
+    // Shutdown flag
+    std::atomic<bool> shutting_down_{false};
+};
+
+} // namespace ircord::net

@@ -1,0 +1,139 @@
+syntax = "proto3";
+package ircord;
+
+// Server-visible envelope wrapper
+message Envelope {
+  uint64 seq           = 1;  // Monotonic counter for replay detection
+  uint64 timestamp_ms  = 2;  // Unix epoch milliseconds
+  MessageType type     = 3;  // Message type determines payload content
+  bytes  payload       = 4;  // Type-dependent inner message (serialized)
+}
+
+enum MessageType {
+  MT_UNKNOWN          = 0;
+
+  // Connection handshake
+  MT_HELLO            = 1;   // Client → Server: version negotiation
+  MT_AUTH_CHALLENGE   = 2;   // Server → Client: nonce for signing
+  MT_AUTH_RESPONSE    = 3;   // Client → Server: signed challenge
+  MT_AUTH_OK          = 4;   // Server → Client: authentication successful
+  MT_AUTH_FAIL        = 5;   // Server → Client: authentication failed
+
+  // Chat relay (encrypted payload, server does not open)
+  MT_CHAT_ENVELOPE    = 10;  // E2E encrypted chat message
+
+  // Key distribution
+  MT_KEY_UPLOAD       = 20;  // Client → Server: upload pre-keys
+  MT_KEY_REQUEST      = 21;  // Client → Server: fetch user's key bundle
+  MT_KEY_BUNDLE       = 22;  // Server → Client: key bundle response
+
+  // Presence
+  MT_PRESENCE         = 30;  // Presence updates (online/away/offline)
+
+  // Voice signaling
+  MT_VOICE_SIGNAL     = 40;  // ICE/SDP relay for WebRTC
+
+  // Server management
+  MT_INVITE           = 50;  // Invite code for server registration
+
+  // Keepalive
+  MT_PING             = 90;
+  MT_PONG             = 91;
+
+  // Errors
+  MT_ERROR            = 99;
+}
+
+// Connection handshake messages
+
+message Hello {
+  uint32 protocol_version = 1;  // Current version: 1
+  string client_version   = 2;  // Client identifier (e.g., "ircord-client/0.1.0")
+}
+
+message AuthChallenge {
+  bytes nonce = 1;  // 32 random bytes for client to sign
+}
+
+message AuthResponse {
+  string  user_id       = 1;  // Username or UUID
+  bytes   identity_pub  = 2;  // Ed25519 public key (32 bytes)
+  bytes   signature     = 3;  // Ed25519 sign(nonce || user_id)
+  bytes   signed_prekey = 4;  // X25519 signed pre-key (first registration)
+  bytes   spk_sig       = 5;  // Identity key signature over SPK
+}
+
+// Key distribution messages
+
+message KeyBundle {
+  bytes  identity_pub       = 1;  // Ed25519 public key
+  bytes  signed_prekey      = 2;  // X25519 signed pre-key
+  bytes  spk_signature      = 3;  // sig(identity_priv, SPK)
+  uint32 spk_id             = 4;
+  bytes  one_time_prekey    = 5;  // X25519 one-time pre-key (removed after use)
+  uint32 opk_id             = 6;
+}
+
+message KeyUpload {
+  bytes              signed_prekey     = 1;
+  bytes              spk_signature     = 2;
+  uint32             spk_id           = 3;
+  repeated bytes     one_time_prekeys  = 4;
+  repeated uint32    opk_ids          = 5;
+}
+
+message KeyRequest {
+  string user_id = 1;  // Whose keys to fetch
+}
+
+// Chat relay (server only forwards, never decrypts)
+
+message ChatEnvelope {
+  string sender_id     = 1;
+  string recipient_id  = 2;  // user_id or "#channel_name"
+  bytes  ciphertext    = 3;  // Signal Protocol ciphertext
+  uint32 ciphertext_type = 4; // WHISPER_MESSAGE=1, PRE_KEY_MESSAGE=3, SENDER_KEY=4
+}
+
+// Presence messages
+
+message PresenceUpdate {
+  string user_id = 1;
+  enum Status {
+    OFFLINE = 0;
+    ONLINE  = 1;
+    AWAY    = 2;
+  }
+  Status status = 2;
+}
+
+// Voice signaling messages
+
+message VoiceSignal {
+  string from_user       = 1;
+  string to_user         = 2;   // or "#channel" for voice rooms
+  enum SignalType {
+    OFFER         = 0;
+    ANSWER        = 1;
+    ICE_CANDIDATE = 2;
+    CALL_INVITE   = 3;
+    CALL_ACCEPT   = 4;
+    CALL_REJECT   = 5;
+    CALL_HANGUP   = 6;
+  }
+  SignalType signal_type = 3;
+  bytes      sdp_or_ice  = 4;   // JSON-serialized SDP or ICE candidate
+}
+
+// Error message
+
+message Error {
+  uint32 code    = 1;
+  string message = 2;
+}
+
+// Empty message for success responses with no payload
+
+message Empty {
+  // No fields - just indicates success
+}
