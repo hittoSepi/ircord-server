@@ -1,13 +1,10 @@
 #pragma once
-
+#include <cstdlib>
 #include <string>
-#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <sstream>
-#include <stdexcept>
-#include <toml.hpp>
+#include <cstdlib>
 
 
 namespace ircord {
@@ -52,8 +49,8 @@ ping_timeout_sec = 60
 )";
 
 
-	inline const std::string &get_default_config_path() {
-
+	inline const std::string& get_default_config_path() {
+		
 		const char *env_config = std::getenv( "IRCORD_CONFIG" );
 		if ( env_config && env_config[0] != '\0' ) {
 			return env_config;
@@ -61,54 +58,21 @@ ping_timeout_sec = 60
 		return default_config_path;
 	}
 
-	inline const bool &file_exists( const std::string &path ) {
-		return std::filesystem::exists( std::filesystem::path( path ) );
+	inline const bool &file_exists(const std::string& path ) {
+		return std::filesystem::exists( std::filesystem::path( path ));
 	}
 
 
 	inline static void create_config_file( const std::string filename ) {
-
+		
 		if ( file_exists( filename ) ) {
 			return;
 		}
 
 		std::ofstream config_file( std::filesystem::path( filename ).c_str() );
-		config_file << std::string( server_toml_template );
+		config_file << std::string(server_toml_template);
 		config_file.close();
 	}
 
 
-struct ServerConfig {
-    // [server]
-    std::string host = "0.0.0.0";
-    uint16_t port = 6667;
-    std::string log_level = "info";
-    int max_connections = 100;
-
-    // [tls]
-    std::string tls_cert_file;
-    std::string tls_key_file;
-
-    // [limits]
-    size_t max_message_bytes = 65536;        // 64 KB
-    int ping_interval_sec = 30;
-    int ping_timeout_sec = 60;
-};
-
-class ConfigLoader {
-public:
-    // Load config from TOML file
-    // Throws std::runtime_error on file not found or parse error
-    static ServerConfig load(const std::string& config_path);
-
-    // Load with default values if file doesn't exist
-    static ServerConfig load_or_default(const std::string& config_path);
-
-    // Validate config has all required fields
-    // Throws std::runtime_error if validation fails
-    static void validate(const ServerConfig& config);
-
-
-};
-
-} // namespace ircord
+}

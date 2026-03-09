@@ -1,4 +1,12 @@
-
+/*****************************************************************//**
+ * \file   main.cpp
+ * \brief  Entry point for the IRCord-Server application.
+ *         Handles command-line argument parsing, configuration loading,
+ *         and server startup. Provides usage and version information.
+ *
+ * \author hitto
+ * \date   March 2026
+ *********************************************************************/
 #include "config.hpp"
 #include "server.hpp"
 #include "utils/string_utils.hpp"
@@ -12,9 +20,6 @@
 namespace {
 
 	using namespace ircord;
-
-
-	const std::string &default_config_path = "./server.toml";
 
 	utils::template_map template_strings {
 		{"program_name", "IRCord-Server" },
@@ -59,18 +64,10 @@ namespace {
 		std::cout << utils::format_template( version_string, template_strings );
 	}
 
-	std::string get_default_config_path() {
-		// Check for config in various locations
-		const char *env_config = std::getenv( "IRCORD_CONFIG" );
-		if ( env_config && env_config[0] != '\0' ) {
-			return env_config;
-		}
-		return default_config_path;
-	}
 
 } // anonymous namespace
 
-
+using namespace ircord;
 
 int main( int argc, char *argv[] ) {
 
