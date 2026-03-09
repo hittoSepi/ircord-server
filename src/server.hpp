@@ -10,6 +10,7 @@
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ssl/context.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -63,6 +64,11 @@ namespace ircord {
 
 		// Work guard to keep io_context running
 		std::optional<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work_;
+
+		// Periodic cleanup timer (offline message expiry)
+		std::optional<boost::asio::steady_timer> cleanup_timer_;
+		void schedule_cleanup();
+		static constexpr int kCleanupIntervalHours = 1;
 	};
 
 } // namespace ircord

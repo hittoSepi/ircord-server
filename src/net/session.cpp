@@ -10,7 +10,9 @@
 #include <spdlog/spdlog.h>
 #include <sodium.h>
 
+#include <cctype>
 #include <cstring>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <chrono>
@@ -24,6 +26,16 @@ std::vector<uint8_t> generate_nonce() {
     std::vector<uint8_t> nonce(32);
     randombytes_buf(nonce.data(), nonce.size());
     return nonce;
+}
+
+// Validate user_id: 1-64 printable non-space ASCII/UTF-8 chars, no null bytes
+bool is_valid_user_id(const std::string& id) {
+    if (id.empty() || id.size() > 64) return false;
+    for (unsigned char c : id) {
+        if (c == 0 || c == ' ') return false;
+        if (c < 0x20) return false;  // reject control characters
+    }
+    return true;
 }
 
 // Get current timestamp in milliseconds
@@ -225,6 +237,11 @@ void Session::handle_envelope(const Envelope& env) {
 
     case MT_CHAT_ENVELOPE:
         if (state_ == SessionState::Established) {
+            if (msg_rate_limiter_ && !msg_rate_limiter_->allow()) {
+                send_error(4290, "Rate limit exceeded");
+                spdlog::warn("[{}] Rate limit exceeded for user {}", remote_endpoint_, user_id_);
+                return;
+            }
             ChatEnvelope chat;
             if (!env.payload().empty() && chat.ParseFromArray(
                     env.payload().data(), static_cast<int>(env.payload().size()))) {
@@ -234,6 +251,24 @@ void Session::handle_envelope(const Envelope& env) {
             }
         } else {
             send_error(4031, "Not authenticated");
+        }
+        break;
+
+    case MT_VOICE_SIGNAL:
+        if (state_ == SessionState::Established) {
+            if (msg_rate_limiter_ && !msg_rate_limiter_->allow()) {
+                send_error(4290, "Rate limit exceeded");
+                return;
+            }
+            VoiceSignal vs;
+            if (!env.payload().empty() && vs.ParseFromArray(
+                    env.payload().data(), static_cast<int>(env.payload().size()))) {
+                handle_voice_signal(vs, env);
+            } else {
+                send_error(4070, "Invalid VOICE_SIGNAL");
+            }
+        } else {
+            send_error(4071, "Not authenticated");
         }
         break;
 
@@ -300,9 +335,9 @@ void Session::handle_auth_response(const AuthResponse& auth) {
     spdlog::info("[{}] AUTH_RESPONSE: user_id={}", remote_endpoint_, auth.user_id());
 
     // --- Basic field validation ---
-    if (auth.user_id().empty()) {
-        send_error(4006, "user_id cannot be empty");
-        disconnect("Empty user_id");
+    if (!is_valid_user_id(auth.user_id())) {
+        send_error(4006, "Invalid user_id (1-64 printable chars, no spaces)");
+        disconnect("Invalid user_id");
         return;
     }
     if (auth.identity_pub().size() != crypto_sign_PUBLICKEYBYTES) {
@@ -390,6 +425,11 @@ void Session::handle_auth_response(const AuthResponse& auth) {
     server_ctx_.on_session_authenticated(shared_from_this());
     start_ping_timer();
 
+    // Initialise per-session message rate limiter
+    msg_rate_limiter_.emplace(
+        server_ctx_.msg_rate_per_sec(),
+        std::chrono::seconds(1));
+
     // --- Deliver offline messages ---
     auto offline_msgs = server_ctx_.offline_store().fetch_and_delete(user_id_);
     for (const auto& payload : offline_msgs) {
@@ -451,6 +491,41 @@ void Session::handle_chat(const ChatEnvelope& chat, const Envelope& raw) {
     }
 }
 
+void Session::handle_voice_signal(const VoiceSignal& vs, const Envelope& raw) {
+    // Anti-spoofing: from_user must match authenticated user
+    if (vs.from_user() != user_id_) {
+        spdlog::warn("[{}] VoiceSignal from_user mismatch: claimed={}, actual={}",
+            remote_endpoint_, vs.from_user(), user_id_);
+        send_error(4072, "from_user mismatch");
+        disconnect("Voice signal spoofing attempt");
+        return;
+    }
+
+    if (vs.to_user().empty()) {
+        send_error(4073, "Empty to_user");
+        return;
+    }
+
+    auto recipient = server_ctx_.find_session(vs.to_user());
+    if (recipient) {
+        recipient->send(raw);
+        spdlog::debug("[{}] Relayed VoiceSignal type={} {} -> {}",
+            remote_endpoint_,
+            static_cast<int>(vs.signal_type()),
+            user_id_, vs.to_user());
+    } else {
+        // Voice signals are ephemeral — no offline storage.
+        // For CALL_INVITE, notify the caller so they know the call can't be placed.
+        if (vs.signal_type() == VoiceSignal::CALL_INVITE) {
+            Error err;
+            err.set_code(4074);
+            err.set_message("Recipient is offline");
+            send_envelope(MT_ERROR, err);
+        }
+        spdlog::debug("[{}] VoiceSignal dropped — {} is offline", remote_endpoint_, vs.to_user());
+    }
+}
+
 void Session::handle_key_upload(const KeyUpload& ku) {
     auto& us = server_ctx_.user_store();
 
@@ -506,8 +581,9 @@ void Session::handle_key_request(const KeyRequest& kr) {
 }
 
 void Session::send(const Envelope& env) {
-    std::vector<uint8_t> data(env.ByteSizeLong());
-    env.SerializeToArray(data.data(), data.size());
+    const int byte_size = static_cast<int>(env.ByteSizeLong());
+    std::vector<uint8_t> data(static_cast<size_t>(byte_size));
+    env.SerializeToArray(data.data(), byte_size);
 
     // Frame format: 4-byte big-endian length + protobuf payload
     std::vector<uint8_t> frame(4 + data.size());
@@ -533,8 +609,9 @@ void Session::send_envelope(MessageType type, const google::protobuf::Message& m
     env.set_timestamp_ms(now_ms());
     env.set_type(type);
 
-    std::vector<uint8_t> payload(msg.ByteSizeLong());
-    msg.SerializeToArray(payload.data(), payload.size());
+    const int msg_size = static_cast<int>(msg.ByteSizeLong());
+    std::vector<uint8_t> payload(static_cast<size_t>(msg_size));
+    msg.SerializeToArray(payload.data(), msg_size);
     env.set_payload(payload.data(), payload.size());
 
     send(env);

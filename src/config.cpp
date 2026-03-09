@@ -90,8 +90,10 @@ namespace ircord {
 			const auto &limits = data.at( "limits" );
 			config.max_message_bytes = static_cast<size_t>(
 				get_optional<int64_t>( limits, "max_message_bytes", 65536 ) );
-			config.ping_interval_sec = get_optional<int>( limits, "ping_interval_sec", 30 );
-			config.ping_timeout_sec = get_optional<int>( limits, "ping_timeout_sec", 60 );
+			config.ping_interval_sec  = get_optional<int>( limits, "ping_interval_sec", 30 );
+			config.ping_timeout_sec   = get_optional<int>( limits, "ping_timeout_sec", 60 );
+			config.msg_rate_per_sec   = get_optional<int>( limits, "msg_rate_per_sec", 20 );
+			config.conn_rate_per_min  = get_optional<int>( limits, "conn_rate_per_min", 10 );
 		}
 
 		return config;

@@ -31,31 +31,33 @@ namespace {
 		{"args", "" }
 	};
 
+
 	const std::string &version_string = R"(
-	${program_name} vv.${version_major}.${version_minor}
-	${program_description}
-	${git_url}	
+${program_name} vv.${version_major}.${version_minor}
+${program_description}
+${git_url}	
 	)";
-	
+
+
 	const std::string &usage_string = R"(
-	${program_description} v.${version_major}.${version_minor}
+${program_description} v.${version_major}.${version_minor}
 
-	Usage: 
-		${args} [options]
+Usage: 
+${args} [options]
 
-		Options:
-		  --config <path>   Path to configuration file (default: ./config/server.toml)
-		  --help, -h        Show this help message
-		  --version, -V     Show version information
+Options:
+	--config <path>   Path to configuration file (default: ./config/server.toml)
+	--help, -h        Show this help message
+	--version, -V     Show version information
 
-	Example:
-		${args} --config ./server.toml
+Example:
+${args} --config ./server.toml
 
-	)";	  
+	)";
 
 
-	void print_usage(const char* args) {
-		template_strings[std::string("args")] = args;
+	void print_usage( const char *args ) {
+		template_strings[std::string( "args" )] = args;
 		std::cout << utils::format_template( usage_string, template_strings );
 		template_strings[std::string( "args" )] = "";
 	}
@@ -69,11 +71,9 @@ namespace {
 
 using namespace ircord;
 
-int main( int argc, char *argv[] ) {
+std::string config_path = get_default_config_path();
 
-	std::string config_path = get_default_config_path();
-	std::cout << config_path << std::endl;
-
+int  parse_command_line( int argc, char *argv[] ) {
 	// Parse command line arguments
 	for ( int i = 1; i < argc; ++i ) {
 		std::string arg = argv[i];
@@ -102,48 +102,25 @@ int main( int argc, char *argv[] ) {
 			return 1;
 		}
 	}
+	return -1;
+}
 
-	try {
-		// Load configuration
-		ircord::ServerConfig config;
-		try {
-			config = ircord::ConfigLoader::load( config_path );
-		}
-		catch ( const std::exception &e ) {
-			std::cerr << "Failed to load config from " << config_path << ": " << e.what() << "\n";
+int main( int argc, char *argv[] ) {
 
+	int parsed = parse_command_line( argc, argv );
+	if ( parsed != -1 ) return parsed;
 
-			// Try to load with defaults
-			std::cout << "Attempting to use default configuration...\n";
-			config = ircord::ConfigLoader::load_or_default( config_path );
+	// Load configuration
+	ircord::ServerConfig config;
+	config = ircord::ConfigLoader::load( config_path );
 
-			if ( config.tls_cert_file.empty() || config.tls_key_file.empty() ) {
-				std::cerr << "\nError: TLS certificate and key files must be specified.\n"
-					<< "Please create a config file or ensure ./certs/server.crt and ./certs/server.key exist.\n"
-					<< "\nTo generate a self-signed certificate for testing:\n"
-					<< "  mkdir -p certs\n"
-					<< "  openssl req -x509 -newkey ed25519 -keyout certs/server.key \\\n"
-					<< "    -out certs/server.crt -days 365 -nodes -subj \"/CN=localhost\"\n";
-				return 1;
-			}
-		}
+	// Validate configuration
+	ircord::ConfigLoader::validate( config );
 
-		// Validate configuration
-		ircord::ConfigLoader::validate( config );
+	// Create and run server
+	ircord::Server server( config );
+	server.run();
 
-		// Create and run server
-		ircord::Server server( config );
-		server.run();
+	return 0;
 
-		return 0;
-
-	}
-	catch ( const std::exception &e ) {
-		std::cerr << "Fatal error: " << e.what() << "\n";
-		return 1;
-	}
-	catch ( ... ) {
-		std::cerr << "Unknown fatal error\n";
-		return 1;
-	}
 }

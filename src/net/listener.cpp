@@ -87,6 +87,45 @@ void Listener::do_accept() {
                     return;
                 }
 
+                // Enforce max_connections
+                if (active_connections_.load() >= max_connections_) {
+                    spdlog::warn("Max connections ({}) reached, rejecting new connection",
+                        max_connections_);
+                    boost::system::error_code close_ec;
+                    socket_.close(close_ec);
+                    socket_ = boost::asio::ip::tcp::socket(
+                        boost::asio::make_strand(acceptor_.get_executor()));
+                    if (!shutting_down_) do_accept();
+                    return;
+                }
+
+                // Per-IP connection rate limiting
+                std::string remote_ip;
+                try {
+                    remote_ip = socket_.remote_endpoint().address().to_string();
+                } catch (...) {
+                    remote_ip = "unknown";
+                }
+                {
+                    std::lock_guard<std::mutex> lk(ip_rate_mutex_);
+                    auto [it, inserted] = ip_rate_map_.emplace(
+                        std::piecewise_construct,
+                        std::forward_as_tuple(remote_ip),
+                        std::forward_as_tuple(conn_rate_per_min_,
+                                              std::chrono::minutes(1)));
+                    if (!it->second.allow()) {
+                        spdlog::warn("Connection rate limit exceeded for IP {}", remote_ip);
+                        boost::system::error_code close_ec;
+                        socket_.close(close_ec);
+                        socket_ = boost::asio::ip::tcp::socket(
+                            boost::asio::make_strand(acceptor_.get_executor()));
+                        if (!shutting_down_) do_accept();
+                        return;
+                    }
+                }
+
+                ++active_connections_;
+
                 // Create new session
                 auto session = std::make_shared<Session>(
                     std::move(socket_), ssl_ctx_, *this);
@@ -161,6 +200,8 @@ void Listener::on_session_authenticated(std::shared_ptr<Session> session) {
 }
 
 void Listener::on_session_disconnected(std::shared_ptr<Session> session, const std::string& reason) {
+    --active_connections_;
+
     std::string disconnected_user_id;
 
     {
@@ -232,6 +273,15 @@ void Listener::broadcast_presence(const PresenceUpdate& update,
 void Listener::set_ping_intervals(int interval_sec, int timeout_sec) {
     ping_interval_sec_ = interval_sec;
     ping_timeout_sec_ = timeout_sec;
+}
+
+void Listener::set_rate_limits(int msg_rate_per_sec, int conn_rate_per_min) {
+    msg_rate_per_sec_ = msg_rate_per_sec;
+    conn_rate_per_min_ = conn_rate_per_min;
+}
+
+void Listener::set_max_connections(int max_connections) {
+    max_connections_ = max_connections;
 }
 
 void Listener::cleanup_dead_sessions() {

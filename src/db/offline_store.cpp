@@ -74,4 +74,23 @@ std::vector<std::vector<uint8_t>> OfflineStore::fetch_and_delete(
     return messages;
 }
 
+int OfflineStore::cleanup_expired() {
+    std::lock_guard<std::mutex> lock(db_.mutex());
+    const int64_t now = now_unix();
+    try {
+        SQLite::Statement del(db_.get(),
+            "DELETE FROM offline_messages WHERE expires_at <= ?");
+        del.bind(1, now);
+        del.exec();
+        int removed = db_.get().getChanges();
+        if (removed > 0) {
+            spdlog::info("OfflineStore: cleaned up {} expired messages", removed);
+        }
+        return removed;
+    } catch (const SQLite::Exception& e) {
+        spdlog::error("OfflineStore::cleanup_expired failed: {}", e.what());
+        return 0;
+    }
+}
+
 } // namespace ircord::db

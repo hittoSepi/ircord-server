@@ -40,6 +40,10 @@ cert_file = "./certs/server.crt"
 # TLS private key file (required)
 key_file = "./certs/server.key"
 
+[database]
+# SQLite database file path
+path = "./ircord.db"
+
 [limits]
 # Maximum message size in bytes (64 KB default)
 max_message_bytes = 65536
@@ -49,6 +53,12 @@ ping_interval_sec = 30
 
 # Ping timeout in seconds (disconnect if no PONG)
 ping_timeout_sec = 60
+
+# Maximum messages per second per authenticated user (rate limiting)
+msg_rate_per_sec = 20
+
+# Maximum connection attempts per minute per IP address
+conn_rate_per_min = 10
 )";
 
 
@@ -96,6 +106,8 @@ struct ServerConfig {
     size_t max_message_bytes = 65536;        // 64 KB
     int ping_interval_sec = 30;
     int ping_timeout_sec = 60;
+    int msg_rate_per_sec = 20;               // max messages/sec per authenticated user
+    int conn_rate_per_min = 10;              // max connection attempts/min per IP
 };
 
 class ConfigLoader {

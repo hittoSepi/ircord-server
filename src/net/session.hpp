@@ -12,6 +12,7 @@
 #include <atomic>
 
 #include "ircord.pb.h"
+#include "net/rate_limiter.hpp"
 
 // Forward declarations for db types (avoid pulling heavy headers into every TU)
 namespace ircord::db { class UserStore; class OfflineStore; }
@@ -78,6 +79,7 @@ private:
     void handle_chat(const ChatEnvelope& chat, const Envelope& raw);
     void handle_key_upload(const KeyUpload& ku);
     void handle_key_request(const KeyRequest& kr);
+    void handle_voice_signal(const VoiceSignal& vs, const Envelope& raw);
 
     // Send helpers
     void send_envelope(MessageType type, const google::protobuf::Message& msg);
@@ -117,6 +119,9 @@ private:
     // Nonce sent in AUTH_CHALLENGE (stored for verification in AUTH_RESPONSE)
     std::vector<uint8_t> auth_nonce_;
 
+    // Per-session message rate limiter (initialised after auth)
+    std::optional<RateLimiter> msg_rate_limiter_;
+
     // Protocol version
     static constexpr uint32_t kProtocolVersion = 1;
 };
@@ -149,6 +154,7 @@ public:
     // Get current config values
     virtual int ping_interval_sec() const = 0;
     virtual int ping_timeout_sec() const = 0;
+    virtual int msg_rate_per_sec() const = 0;
 };
 
 } // namespace ircord::net

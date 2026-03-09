@@ -1,6 +1,7 @@
 #pragma once
 
 #include "session.hpp"
+#include "rate_limiter.hpp"
 #include "db/user_store.hpp"
 #include "db/offline_store.hpp"
 
@@ -9,6 +10,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/signal_set.hpp>
 #include <boost/asio/ssl/context.hpp>
+#include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -48,9 +50,12 @@ public:
     // Getters
     int ping_interval_sec() const override { return ping_interval_sec_; }
     int ping_timeout_sec() const override { return ping_timeout_sec_; }
+    int msg_rate_per_sec() const override { return msg_rate_per_sec_; }
 
-    // Set ping timers from config
+    // Set limits from config
     void set_ping_intervals(int interval_sec, int timeout_sec);
+    void set_rate_limits(int msg_rate_per_sec, int conn_rate_per_min);
+    void set_max_connections(int max_connections);
 
 private:
     void do_accept();
@@ -77,9 +82,19 @@ private:
     std::unordered_map<std::shared_ptr<Session>, std::string> users_by_session_;
     std::mutex sessions_mutex_;
 
-    // Ping settings
+    // Config limits
     int ping_interval_sec_ = 30;
     int ping_timeout_sec_ = 60;
+    int msg_rate_per_sec_ = 20;
+    int conn_rate_per_min_ = 10;
+    int max_connections_ = 100;
+
+    // Total active connections (pre-auth + authenticated)
+    std::atomic<int> active_connections_{0};
+
+    // Per-IP connection rate limiters
+    std::unordered_map<std::string, RateLimiter> ip_rate_map_;
+    std::mutex ip_rate_mutex_;
 
     // Shutdown flag
     std::atomic<bool> shutting_down_{false};

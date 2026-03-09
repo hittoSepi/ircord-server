@@ -72,6 +72,12 @@ Server::Server(const ServerConfig& config)
         config_.ping_interval_sec,
         config_.ping_timeout_sec);
 
+    // Set rate limits and connection cap
+    listener_->set_rate_limits(
+        config_.msg_rate_per_sec,
+        config_.conn_rate_per_min);
+    listener_->set_max_connections(config_.max_connections);
+
     // Set global pointer for signal handler
     g_server = this;
 }
@@ -161,6 +167,10 @@ void Server::run() {
 
     spdlog::info("Starting IRCord Server v0.1.0");
 
+    // Schedule first offline-message cleanup
+    cleanup_timer_.emplace(ioc_);
+    schedule_cleanup();
+
     // Install signal handlers
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
@@ -211,6 +221,19 @@ void Server::shutdown() {
     stop_thread_pool();
 
     spdlog::info("Shutdown complete");
+}
+
+void Server::schedule_cleanup() {
+    cleanup_timer_->expires_after(std::chrono::hours(kCleanupIntervalHours));
+    cleanup_timer_->async_wait([this](const boost::system::error_code& ec) {
+        if (ec == boost::asio::error::operation_aborted || !running_) {
+            return;
+        }
+        if (offline_store_) {
+            offline_store_->cleanup_expired();
+        }
+        schedule_cleanup();
+    });
 }
 
 } // namespace ircord
