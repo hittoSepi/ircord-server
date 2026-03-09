@@ -18,7 +18,7 @@ End-to-end encrypted chat and voice application for friend groups. Combines irss
 | Config | toml11 | Simple TOML parsing |
 | Logging | spdlog | Fast, structured logging |
 | Testing | Catch2 | Header-only test framework |
-| Build | CMake + vcpkg | Cross-platform build, manifest-mode deps |
+| Build | CMake + vcpkg | Cross-platform build, manifest-mode deps |           asaa
 
 ## Build Instructions
 
