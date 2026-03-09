@@ -1,6 +1,8 @@
 #pragma once
 
 #include "session.hpp"
+#include "db/user_store.hpp"
+#include "db/offline_store.hpp"
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/strand.hpp>
@@ -21,7 +23,9 @@ public:
         boost::asio::io_context& ioc,
         boost::asio::ssl::context& ssl_ctx,
         const std::string& host,
-        uint16_t port);
+        uint16_t port,
+        db::UserStore& user_store,
+        db::OfflineStore& offline_store);
 
     ~Listener() override;
 
@@ -35,6 +39,11 @@ public:
     void on_session_authenticated(std::shared_ptr<Session> session) override;
     void on_session_disconnected(std::shared_ptr<Session> session, const std::string& reason) override;
     void broadcast(const Envelope& env, std::shared_ptr<Session> exclude = nullptr) override;
+    void broadcast_presence(const PresenceUpdate& update,
+                            std::shared_ptr<Session> exclude = nullptr) override;
+    std::shared_ptr<Session> find_session(const std::string& user_id) override;
+    db::UserStore& user_store() override { return user_store_; }
+    db::OfflineStore& offline_store() override { return offline_store_; }
 
     // Getters
     int ping_interval_sec() const override { return ping_interval_sec_; }
@@ -58,6 +67,10 @@ private:
     Socket socket_;
     boost::asio::ssl::context& ssl_ctx_;
     SignalSet signals_;
+
+    // DB stores
+    db::UserStore& user_store_;
+    db::OfflineStore& offline_store_;
 
     // Active sessions
     std::unordered_map<std::string, std::shared_ptr<Session>> sessions_by_user_;

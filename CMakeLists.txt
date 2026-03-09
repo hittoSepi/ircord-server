@@ -18,6 +18,8 @@ find_package(Boost REQUIRED COMPONENTS system)
 find_package(OpenSSL REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(spdlog REQUIRED)
+find_package(unofficial-sodium CONFIG REQUIRED)
+find_package(SQLiteCpp REQUIRED)
 
 # toml11 is header-only, find it differently
 find_path(TOML11_INCLUDE_DIR "toml.hpp"
@@ -42,6 +44,10 @@ set(SERVER_SRC
     src/net/listener.cpp
     src/net/session.cpp
     src/net/tls_context.cpp
+    src/db/database.cpp
+    src/db/user_store.cpp
+    src/db/offline_store.cpp
+    src/channel/channel_manager.cpp
     ${PROTO_SRCS}
 )
 
@@ -52,6 +58,10 @@ set(SERVER_HDRS
     src/net/listener.hpp
     src/net/session.hpp
     src/net/tls_context.hpp
+    src/db/database.hpp
+    src/db/user_store.hpp
+    src/db/offline_store.hpp
+    src/channel/channel_manager.hpp
     ${PROTO_HDRS}
 )
 
@@ -74,6 +84,8 @@ target_link_libraries(ircord-server PRIVATE
     protobuf::libprotobuf
     spdlog::spdlog
     $<IF:$<TARGET_EXISTS:spdlog::spdlog_header_only>,spdlog::spdlog_header_only,>
+    unofficial-sodium::sodium
+    SQLiteCpp
 )
 
 # Platform-specific settings

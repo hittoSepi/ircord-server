@@ -1,12 +1,16 @@
 #include "session.hpp"
 #include "config.hpp"
+#include "db/user_store.hpp"
+#include "db/offline_store.hpp"
 
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
 #include <boost/endian/conversion.hpp>
 #include <spdlog/spdlog.h>
+#include <sodium.h>
 
+#include <cstring>
 #include <random>
 #include <sstream>
 #include <chrono>
@@ -15,15 +19,10 @@ namespace ircord::net {
 
 namespace {
 
-// Generate random 32-byte nonce
+// Generate cryptographically random 32-byte nonce via libsodium
 std::vector<uint8_t> generate_nonce() {
     std::vector<uint8_t> nonce(32);
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<uint16_t> dist(0, 255);
-    for (auto& b : nonce) {
-        b = static_cast<uint8_t>(dist(gen));
-    }
+    randombytes_buf(nonce.data(), nonce.size());
     return nonce;
 }
 
@@ -224,6 +223,48 @@ void Session::handle_envelope(const Envelope& env) {
         ping_sent_ = false;
         break;
 
+    case MT_CHAT_ENVELOPE:
+        if (state_ == SessionState::Established) {
+            ChatEnvelope chat;
+            if (!env.payload().empty() && chat.ParseFromArray(
+                    env.payload().data(), static_cast<int>(env.payload().size()))) {
+                handle_chat(chat, env);
+            } else {
+                send_error(4030, "Invalid CHAT_ENVELOPE");
+            }
+        } else {
+            send_error(4031, "Not authenticated");
+        }
+        break;
+
+    case MT_KEY_UPLOAD:
+        if (state_ == SessionState::Established) {
+            KeyUpload ku;
+            if (!env.payload().empty() && ku.ParseFromArray(
+                    env.payload().data(), static_cast<int>(env.payload().size()))) {
+                handle_key_upload(ku);
+            } else {
+                send_error(4040, "Invalid KEY_UPLOAD");
+            }
+        } else {
+            send_error(4041, "Not authenticated");
+        }
+        break;
+
+    case MT_KEY_REQUEST:
+        if (state_ == SessionState::Established) {
+            KeyRequest kr;
+            if (!env.payload().empty() && kr.ParseFromArray(
+                    env.payload().data(), static_cast<int>(env.payload().size()))) {
+                handle_key_request(kr);
+            } else {
+                send_error(4050, "Invalid KEY_REQUEST");
+            }
+        } else {
+            send_error(4051, "Not authenticated");
+        }
+        break;
+
     default:
         spdlog::debug("[{}] Unhandled message type: {}", remote_endpoint_,
             static_cast<int>(env.type()));
@@ -244,13 +285,10 @@ void Session::handle_hello(const Hello& hello) {
         return;
     }
 
-    // Generate and send auth challenge
-    auto nonce = generate_nonce();
+    // Generate and send auth challenge; store nonce for later verification
+    auth_nonce_ = generate_nonce();
     AuthChallenge challenge;
-    challenge.set_nonce(nonce.data(), nonce.size());
-
-    // Store nonce for auth verification (in a real implementation, store securely)
-    // For now, we'll accept any non-empty signature
+    challenge.set_nonce(auth_nonce_.data(), auth_nonce_.size());
 
     send_envelope(MT_AUTH_CHALLENGE, challenge);
     set_state(SessionState::AuthPending);
@@ -261,9 +299,87 @@ void Session::handle_hello(const Hello& hello) {
 void Session::handle_auth_response(const AuthResponse& auth) {
     spdlog::info("[{}] AUTH_RESPONSE: user_id={}", remote_endpoint_, auth.user_id());
 
-    // In Phase 1, we don't verify the signature yet (Phase 2)
-    // Just accept the auth and move to Established state
+    // --- Basic field validation ---
+    if (auth.user_id().empty()) {
+        send_error(4006, "user_id cannot be empty");
+        disconnect("Empty user_id");
+        return;
+    }
+    if (auth.identity_pub().size() != crypto_sign_PUBLICKEYBYTES) {
+        send_error(4007, "Invalid identity_pub length");
+        disconnect("Bad identity_pub");
+        return;
+    }
+    if (auth.signature().size() != crypto_sign_BYTES) {
+        send_error(4008, "Invalid signature length");
+        disconnect("Bad signature");
+        return;
+    }
 
+    // --- Ed25519 signature verification ---
+    // Message = nonce (32 bytes) || user_id (UTF-8)
+    std::vector<uint8_t> message;
+    message.insert(message.end(), auth_nonce_.begin(), auth_nonce_.end());
+    message.insert(message.end(), auth.user_id().begin(), auth.user_id().end());
+
+    const auto* sig = reinterpret_cast<const unsigned char*>(auth.signature().data());
+    const auto* pk  = reinterpret_cast<const unsigned char*>(auth.identity_pub().data());
+
+    if (crypto_sign_verify_detached(sig, message.data(), message.size(), pk) != 0) {
+        Error err;
+        err.set_code(4009);
+        err.set_message("Signature verification failed");
+        send_envelope(MT_AUTH_FAIL, err);
+        disconnect("Auth failed: bad signature");
+        return;
+    }
+
+    // --- DB: register new user or verify known user ---
+    auto& us = server_ctx_.user_store();
+    auto existing = us.find_by_id(auth.user_id());
+
+    const std::vector<uint8_t> presented_key(
+        auth.identity_pub().begin(), auth.identity_pub().end());
+
+    if (!existing) {
+        // New user — register
+        db::User user;
+        user.user_id     = auth.user_id();
+        user.identity_pub = presented_key;
+        user.created_at  = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+
+        try {
+            us.insert(user);
+        } catch (const std::exception& e) {
+            spdlog::error("[{}] DB insert failed: {}", remote_endpoint_, e.what());
+            send_error(5001, "Internal error");
+            disconnect("DB error");
+            return;
+        }
+
+        // Store initial signed pre-key if provided
+        if (!auth.signed_prekey().empty() && !auth.spk_sig().empty()) {
+            us.upsert_signed_prekey(
+                auth.user_id(),
+                std::vector<uint8_t>(auth.signed_prekey().begin(), auth.signed_prekey().end()),
+                std::vector<uint8_t>(auth.spk_sig().begin(), auth.spk_sig().end()));
+        }
+
+        spdlog::info("[{}] Registered new user: {}", remote_endpoint_, auth.user_id());
+    } else {
+        // Known user — verify identity key matches stored key
+        if (existing->identity_pub != presented_key) {
+            Error err;
+            err.set_code(4010);
+            err.set_message("Identity key mismatch");
+            send_envelope(MT_AUTH_FAIL, err);
+            disconnect("Auth failed: key mismatch");
+            return;
+        }
+    }
+
+    // --- Auth success ---
     user_id_ = auth.user_id();
 
     send_envelope(MT_AUTH_OK, Empty());
@@ -271,11 +387,27 @@ void Session::handle_auth_response(const AuthResponse& auth) {
 
     spdlog::info("[{}] Session established for user: {}", remote_endpoint_, user_id_);
 
-    // Notify server context
     server_ctx_.on_session_authenticated(shared_from_this());
-
-    // Start ping timer
     start_ping_timer();
+
+    // --- Deliver offline messages ---
+    auto offline_msgs = server_ctx_.offline_store().fetch_and_delete(user_id_);
+    for (const auto& payload : offline_msgs) {
+        Envelope env;
+        if (env.ParseFromArray(payload.data(), static_cast<int>(payload.size()))) {
+            send(env);
+        }
+    }
+    if (!offline_msgs.empty()) {
+        spdlog::info("[{}] Delivered {} offline messages to {}",
+            remote_endpoint_, offline_msgs.size(), user_id_);
+    }
+
+    // --- Broadcast ONLINE presence ---
+    PresenceUpdate presence;
+    presence.set_user_id(user_id_);
+    presence.set_status(PresenceUpdate::ONLINE);
+    server_ctx_.broadcast_presence(presence, shared_from_this());
 }
 
 void Session::handle_ping(const Envelope& env) {
@@ -287,6 +419,90 @@ void Session::handle_ping(const Envelope& env) {
     pong.set_payload(env.payload());  // Echo back ping payload
 
     send(pong);
+}
+
+void Session::handle_chat(const ChatEnvelope& chat, const Envelope& raw) {
+    // Reject sender spoofing
+    if (chat.sender_id() != user_id_) {
+        spdlog::warn("[{}] sender_id mismatch: claimed={}, actual={}",
+            remote_endpoint_, chat.sender_id(), user_id_);
+        send_error(4032, "Sender ID mismatch");
+        disconnect("Sender ID spoofing attempt");
+        return;
+    }
+
+    if (chat.recipient_id().empty()) {
+        send_error(4033, "Empty recipient_id");
+        return;
+    }
+
+    // Route: online → direct send, offline → store
+    auto recipient_session = server_ctx_.find_session(chat.recipient_id());
+    if (recipient_session) {
+        recipient_session->send(raw);
+        spdlog::debug("[{}] Routed CHAT {} -> {} (online)",
+            remote_endpoint_, user_id_, chat.recipient_id());
+    } else {
+        std::vector<uint8_t> payload(raw.ByteSizeLong());
+        raw.SerializeToArray(payload.data(), static_cast<int>(payload.size()));
+        server_ctx_.offline_store().save(chat.recipient_id(), payload);
+        spdlog::debug("[{}] Stored CHAT {} -> {} (offline)",
+            remote_endpoint_, user_id_, chat.recipient_id());
+    }
+}
+
+void Session::handle_key_upload(const KeyUpload& ku) {
+    auto& us = server_ctx_.user_store();
+
+    // Update signed pre-key
+    if (!ku.signed_prekey().empty() && !ku.spk_signature().empty()) {
+        us.upsert_signed_prekey(
+            user_id_,
+            std::vector<uint8_t>(ku.signed_prekey().begin(), ku.signed_prekey().end()),
+            std::vector<uint8_t>(ku.spk_signature().begin(), ku.spk_signature().end()));
+    }
+
+    // Store one-time pre-keys
+    for (const auto& opk_bytes : ku.one_time_prekeys()) {
+        us.store_opk(user_id_,
+            std::vector<uint8_t>(opk_bytes.begin(), opk_bytes.end()));
+    }
+
+    spdlog::info("[{}] KEY_UPLOAD: {} OPKs uploaded by {}",
+        remote_endpoint_, ku.one_time_prekeys_size(), user_id_);
+
+    send_envelope(MT_AUTH_OK, Empty());  // ack with Empty payload
+}
+
+void Session::handle_key_request(const KeyRequest& kr) {
+    auto& us = server_ctx_.user_store();
+
+    auto target = us.find_by_id(kr.user_id());
+    if (!target) {
+        send_error(4060, "User not found");
+        return;
+    }
+
+    auto spk = us.get_signed_prekey(kr.user_id());
+    auto opk = us.consume_opk(kr.user_id());
+
+    KeyBundle bundle;
+    bundle.set_identity_pub(target->identity_pub.data(),
+                             target->identity_pub.size());
+
+    if (spk) {
+        bundle.set_signed_prekey(spk->spk_pub.data(), spk->spk_pub.size());
+        bundle.set_spk_signature(spk->spk_sig.data(), spk->spk_sig.size());
+    }
+
+    if (!opk.empty()) {
+        bundle.set_one_time_prekey(opk.data(), opk.size());
+    }
+
+    spdlog::debug("[{}] KEY_REQUEST: sending bundle for {} (opk={})",
+        remote_endpoint_, kr.user_id(), !opk.empty());
+
+    send_envelope(MT_KEY_BUNDLE, bundle);
 }
 
 void Session::send(const Envelope& env) {

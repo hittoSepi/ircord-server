@@ -61,7 +61,7 @@ ping_timeout_sec = 60
 		return default_config_path;
 	}
 
-	inline const bool &file_exists( const std::string &path ) {
+	inline bool file_exists( const std::string &path ) {
 		return std::filesystem::exists( std::filesystem::path( path ) );
 	}
 
@@ -88,6 +88,9 @@ struct ServerConfig {
     // [tls]
     std::string tls_cert_file;
     std::string tls_key_file;
+
+    // [database]
+    std::string db_path = "./ircord.db";
 
     // [limits]
     size_t max_message_bytes = 65536;        // 64 KB

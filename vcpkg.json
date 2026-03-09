@@ -8,6 +8,8 @@
     "openssl",
     "protobuf",
     "toml11",
-    "spdlog"
+    "spdlog",
+    "libsodium",
+    "sqlitecpp"
   ]
 }

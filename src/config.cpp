@@ -46,18 +46,15 @@ namespace ircord {
 
 	ServerConfig ConfigLoader::load( const std::string &config_path ) {
 
-		if ( !ircord::file_exists( config_path ) ) {
-			ircord::create_config_file( config_path );
-		}
-
 		std::filesystem::path cp = std::filesystem::path( config_path );
+		std::string _path = cp.string();
 
-		if ( !std::filesystem::exists( cp ) ) {
-			std::ostringstream oss;
-			oss << "Cannot open config file: " << config_path;
-			throw std::runtime_error( oss.str() );
+		if ( !ircord::file_exists( _path ) ) {
+			std::cout << "Creating new config file.." << std::endl;
+			ircord::create_config_file( _path );
 		}
-		std::string _path = std::filesystem::path( config_path ).string();
+
+
 		const auto data = toml::parse( _path );
 
 		ServerConfig config;
@@ -80,6 +77,12 @@ namespace ircord {
 			config.tls_key_file = get_required<std::string>( tls, "key_file" );
 		} else {
 			throw std::runtime_error( "Missing required [tls] section in config" );
+		}
+
+		// [database] section - optional
+		if ( data.contains( "database" ) ) {
+			const auto &database = data.at( "database" );
+			config.db_path = get_optional<std::string>( database, "path", "./ircord.db" );
 		}
 
 		// [limits] section - optional

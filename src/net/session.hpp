@@ -13,6 +13,9 @@
 
 #include "ircord.pb.h"
 
+// Forward declarations for db types (avoid pulling heavy headers into every TU)
+namespace ircord::db { class UserStore; class OfflineStore; }
+
 namespace ircord::net {
 
 // Forward declarations
@@ -72,6 +75,9 @@ private:
     void handle_hello(const Hello& hello);
     void handle_auth_response(const AuthResponse& auth);
     void handle_ping(const Envelope& env);
+    void handle_chat(const ChatEnvelope& chat, const Envelope& raw);
+    void handle_key_upload(const KeyUpload& ku);
+    void handle_key_request(const KeyRequest& kr);
 
     // Send helpers
     void send_envelope(MessageType type, const google::protobuf::Message& msg);
@@ -108,6 +114,9 @@ private:
     Timer ping_timer_;
     std::atomic<bool> ping_sent_{false};
 
+    // Nonce sent in AUTH_CHALLENGE (stored for verification in AUTH_RESPONSE)
+    std::vector<uint8_t> auth_nonce_;
+
     // Protocol version
     static constexpr uint32_t kProtocolVersion = 1;
 };
@@ -125,6 +134,17 @@ public:
 
     // Broadcast message to all authenticated sessions
     virtual void broadcast(const Envelope& env, std::shared_ptr<Session> exclude = nullptr) = 0;
+
+    // Broadcast a presence update to all authenticated sessions
+    virtual void broadcast_presence(const PresenceUpdate& update,
+                                    std::shared_ptr<Session> exclude = nullptr) = 0;
+
+    // Find an online authenticated session by user_id (returns nullptr if offline)
+    virtual std::shared_ptr<Session> find_session(const std::string& user_id) = 0;
+
+    // DB stores for auth and offline delivery
+    virtual db::UserStore& user_store() = 0;
+    virtual db::OfflineStore& offline_store() = 0;
 
     // Get current config values
     virtual int ping_interval_sec() const = 0;

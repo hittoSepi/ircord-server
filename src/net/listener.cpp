@@ -4,18 +4,24 @@
 #include <boost/asio/bind_executor.hpp>
 #include <spdlog/spdlog.h>
 
+#include <chrono>
+
 namespace ircord::net {
 
 Listener::Listener(
     boost::asio::io_context& ioc,
     boost::asio::ssl::context& ssl_ctx,
     const std::string& host,
-    uint16_t port)
+    uint16_t port,
+    db::UserStore& user_store,
+    db::OfflineStore& offline_store)
     : strand_(boost::asio::make_strand(ioc))
     , acceptor_(boost::asio::make_strand(ioc))
     , socket_(boost::asio::make_strand(ioc))
     , ssl_ctx_(ssl_ctx)
     , signals_(boost::asio::make_strand(ioc), SIGINT, SIGTERM)
+    , user_store_(user_store)
+    , offline_store_(offline_store)
 {
     // Open acceptor
     boost::system::error_code ec;
@@ -155,15 +161,27 @@ void Listener::on_session_authenticated(std::shared_ptr<Session> session) {
 }
 
 void Listener::on_session_disconnected(std::shared_ptr<Session> session, const std::string& reason) {
-    std::lock_guard<std::mutex> lock(sessions_mutex_);
+    std::string disconnected_user_id;
 
-    auto it = users_by_session_.find(session);
-    if (it != users_by_session_.end()) {
-        const std::string& user_id = it->second;
-        spdlog::info("User {} disconnected: {}", user_id, reason);
+    {
+        std::lock_guard<std::mutex> lock(sessions_mutex_);
 
-        sessions_by_user_.erase(user_id);
-        users_by_session_.erase(it);
+        auto it = users_by_session_.find(session);
+        if (it != users_by_session_.end()) {
+            disconnected_user_id = it->second;
+            spdlog::info("User {} disconnected: {}", disconnected_user_id, reason);
+
+            sessions_by_user_.erase(disconnected_user_id);
+            users_by_session_.erase(it);
+        }
+    }
+
+    // Broadcast OFFLINE presence after releasing the lock
+    if (!disconnected_user_id.empty()) {
+        PresenceUpdate presence;
+        presence.set_user_id(disconnected_user_id);
+        presence.set_status(PresenceUpdate::OFFLINE);
+        broadcast_presence(presence, nullptr);
     }
 }
 
@@ -185,6 +203,30 @@ void Listener::broadcast(const Envelope& env, std::shared_ptr<Session> exclude) 
     }
 
     spdlog::debug("Broadcast to {} sessions", sessions.size());
+}
+
+std::shared_ptr<Session> Listener::find_session(const std::string& user_id) {
+    std::lock_guard<std::mutex> lock(sessions_mutex_);
+    auto it = sessions_by_user_.find(user_id);
+    if (it != sessions_by_user_.end()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+void Listener::broadcast_presence(const PresenceUpdate& update,
+                                   std::shared_ptr<Session> exclude) {
+    Envelope env;
+    env.set_seq(0);
+    env.set_timestamp_ms(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    env.set_type(MT_PRESENCE);
+    std::vector<uint8_t> payload(update.ByteSizeLong());
+    update.SerializeToArray(payload.data(), static_cast<int>(payload.size()));
+    env.set_payload(payload.data(), payload.size());
+
+    broadcast(env, exclude);
 }
 
 void Listener::set_ping_intervals(int interval_sec, int timeout_sec) {

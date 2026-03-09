@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
+#include <sodium.h>
 
 #include <iostream>
 #include <csignal>
@@ -33,6 +34,23 @@ Server::Server(const ServerConfig& config)
     // Setup logging
     setup_logging();
 
+    // Initialize libsodium
+    if (sodium_init() < 0) {
+        throw std::runtime_error("Failed to initialize libsodium");
+    }
+    spdlog::info("libsodium initialized");
+
+    // Open database
+    try {
+        db_            = std::make_unique<db::Database>(config_.db_path);
+        user_store_    = std::make_unique<db::UserStore>(*db_);
+        offline_store_ = std::make_unique<db::OfflineStore>(*db_);
+        spdlog::info("Database layer initialized: {}", config_.db_path);
+    } catch (const std::exception& e) {
+        spdlog::error("Failed to initialize database: {}", e.what());
+        throw;
+    }
+
     // Create TLS context
     try {
         ssl_ctx_ = net::TlsContextFactory::create_server_context(
@@ -46,7 +64,8 @@ Server::Server(const ServerConfig& config)
 
     // Create listener
     listener_ = std::make_unique<net::Listener>(
-        ioc_, ssl_ctx_, config_.host, config_.port);
+        ioc_, ssl_ctx_, config_.host, config_.port,
+        *user_store_, *offline_store_);
 
     // Set ping intervals
     listener_->set_ping_intervals(
