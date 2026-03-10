@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Language | C++20 | Performance, compatibility client/server |
 | Async I/O | Boost.Asio | Scalable event loop, cross-platform |
 | Serialization | Protobuf | Better tooling, schema evolution vs FlatBuffers |
-| TUI (client) | notcurses | Modern, true color, thread-safe, Unicode |
+| TUI (client) | FTXUI | Cross-platform terminal UI, component-based |
 | E2E Crypto | libsignal-protocol-c + libsodium | Signal Protocol (X3DH + Double Ratchet) |
 | Voice | libdatachannel + libopus | WebRTC with ICE/DTLS-SRTP, lightweight |
 | Audio I/O | miniaudio | Header-only, cross-platform |
@@ -61,14 +61,14 @@ Listener (TLS/TCP) → Session Manager → Services:
 ### Client
 
 ```
-Main Thread: notcurses render loop + input polling
+Main Thread: FTXUI render loop + input polling
          │
          ├─→ IO Thread (Boost.Asio): TLS recv/send, reconnect
          ├─→ Preview Thread (libcurl): OG metadata fetch
          └─→ Audio Thread (miniaudio callback): Opus encode/decode, jitter buffer
 ```
 
-**Critical rule**: Only Main Thread calls notcurses functions. Other threads post UI updates via `AppState::post_ui()`.
+**Critical rule**: Only Main Thread calls FTXUI functions. Other threads post UI updates via `AppState::post_ui()`.
 
 ## Wire Protocol
 
