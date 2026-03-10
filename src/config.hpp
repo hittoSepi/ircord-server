@@ -62,11 +62,11 @@ conn_rate_per_min = 10
 )";
 
 
-	inline const std::string &get_default_config_path() {
+	inline std::string get_default_config_path() {
 
 		const char *env_config = std::getenv( "IRCORD_CONFIG" );
 		if ( env_config && env_config[0] != '\0' ) {
-			return env_config;
+			return std::string(env_config);
 		}
 		return default_config_path;
 	}

@@ -115,7 +115,7 @@ std::vector<uint8_t> UserStore::consume_opk(const std::string& user_id) {
 
         SQLite::Statement upd(db_.get(),
             "UPDATE one_time_prekeys SET used = 1 WHERE id = ?");
-        upd.bind(1, static_cast<long long>(id));
+        upd.bind(1, static_cast<int64_t>(id));
         upd.exec();
 
         return opk;
