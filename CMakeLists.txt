@@ -47,7 +47,9 @@ set(SERVER_SRC
     src/db/database.cpp
     src/db/user_store.cpp
     src/db/offline_store.cpp
+    src/db/file_store.cpp
     src/channel/channel_manager.cpp
+    src/commands/command_handler.cpp
     ${PROTO_SRCS}
 )
 
@@ -58,10 +60,13 @@ set(SERVER_HDRS
     src/net/listener.hpp
     src/net/session.hpp
     src/net/tls_context.hpp
+    src/net/rate_limiter.hpp
     src/db/database.hpp
     src/db/user_store.hpp
     src/db/offline_store.hpp
+    src/db/file_store.hpp
     src/channel/channel_manager.hpp
+    src/commands/command_handler.hpp
     ${PROTO_HDRS}
 )
 

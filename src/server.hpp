@@ -5,6 +5,7 @@
 #include "db/database.hpp"
 #include "db/user_store.hpp"
 #include "db/offline_store.hpp"
+#include "db/file_store.hpp"
 
 #include <atomic>
 #include <boost/asio/executor_work_guard.hpp>
@@ -55,6 +56,7 @@ namespace ircord {
 		std::unique_ptr<db::Database>     db_;
 		std::unique_ptr<db::UserStore>    user_store_;
 		std::unique_ptr<db::OfflineStore> offline_store_;
+		std::unique_ptr<db::FileStore>    file_store_;
 
 		// Listener
 		std::unique_ptr<net::Listener> listener_;

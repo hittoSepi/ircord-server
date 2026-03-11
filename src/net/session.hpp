@@ -88,15 +88,6 @@ private:
     void handle_file_request(const FileUploadRequest& req, const Envelope& raw);
     void handle_file_upload(const FileUploadChunk& chunk, const Envelope& raw);
     void handle_file_download(const FileDownloadRequest& req);
-    
-    struct UploadState {
-        std::string file_id;
-        uint64_t bytes_received{0};
-        uint64_t total_bytes{0};
-        std::chrono::steady_clock::time_point start_time;
-    };
-    std::unordered_map<std::string, UploadState> active_uploads_;
-    std::mutex uploads_mutex_;
 
     // Send helpers
     void send_envelope(MessageType type, const google::protobuf::Message& msg);

@@ -4,6 +4,7 @@
 #include "rate_limiter.hpp"
 #include "db/user_store.hpp"
 #include "db/offline_store.hpp"
+#include "db/file_store.hpp"
 #include "commands/command_handler.hpp"
 
 #include <boost/asio/io_context.hpp>
@@ -48,7 +49,11 @@ public:
     db::UserStore& user_store() override { return user_store_; }
     db::OfflineStore& offline_store() override { return offline_store_; }
     db::Database& database() override;
+    db::FileStore& file_store() override { return *file_store_; }
     commands::CommandHandler* command_handler() override { return command_handler_.get(); }
+    
+    // Set file store reference
+    void set_file_store(db::FileStore& file_store) { file_store_ = &file_store; }
 
     // Getters
     int ping_interval_sec() const override { return ping_interval_sec_; }
@@ -83,6 +88,7 @@ private:
     db::UserStore& user_store_;
     db::OfflineStore& offline_store_;
     db::Database* db_ = nullptr;
+    db::FileStore* file_store_ = nullptr;
 
     // Command handler
     std::unique_ptr<commands::CommandHandler> command_handler_;

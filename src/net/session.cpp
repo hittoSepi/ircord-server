@@ -316,31 +316,29 @@ void Session::handle_envelope(const Envelope& env) {
         }
         break;
 
-    case MT_FILE_REQUEST:
+    case MT_FILE_UPLOAD:
         if (state_ == SessionState::Established) {
-            FileUploadRequest req;
-            if (!env.payload().empty() && req.ParseFromArray(
-                    env.payload().data(), static_cast<int>(env.payload().size()))) {
-                handle_file_request(req, env);
+            if (env.payload().empty()) {
+                send_error(4080, "Empty FILE_UPLOAD");
+                break;
+            }
+            // Try to parse as chunk first (has data field)
+            FileUploadChunk chunk;
+            if (chunk.ParseFromArray(env.payload().data(),
+                    static_cast<int>(env.payload().size())) && chunk.data().size() > 0) {
+                handle_file_upload(chunk, env);
             } else {
-                send_error(4080, "Invalid FILE_REQUEST");
+                // Try as request
+                FileUploadRequest req;
+                if (req.ParseFromArray(env.payload().data(),
+                        static_cast<int>(env.payload().size()))) {
+                    handle_file_request(req, env);
+                } else {
+                    send_error(4082, "Invalid FILE_UPLOAD");
+                }
             }
         } else {
             send_error(4081, "Not authenticated");
-        }
-        break;
-
-    case MT_FILE_UPLOAD:
-        if (state_ == SessionState::Established) {
-            FileUploadChunk chunk;
-            if (!env.payload().empty() && chunk.ParseFromArray(
-                    env.payload().data(), static_cast<int>(env.payload().size()))) {
-                handle_file_upload(chunk, env);
-            } else {
-                send_error(4082, "Invalid FILE_UPLOAD");
-            }
-        } else {
-            send_error(4083, "Not authenticated");
         }
         break;
 
@@ -667,24 +665,26 @@ void Session::handle_file_request(const FileUploadRequest& req, const Envelope& 
         return;
     }
     
-    // Check per-user file storage limit
-    constexpr uint64_t max_per_user_bytes = 100 * 1024 * 1024; // 100 MB per user
-    if (file_store.getTotalUserBytes(user_id_) + req.file_size() > max_per_user_bytes) {
+    // Check max file size (100 MB)
+    constexpr uint64_t max_file_size = 100 * 1024 * 1024;
+    if (req.file_size() > max_file_size) {
         FileError err;
         err.set_file_id(req.file_id());
         err.set_error_code(4085);
-        err.set_error_message("Storage quota exceeded");
+        err.set_error_message("File too large (max 100 MB)");
         send_envelope(MT_FILE_ERROR, err);
         return;
     }
     
     // Create file entry
-    FileStore::FileMetadata metadata;
+    db::FileMetadata metadata;
     metadata.file_id = req.file_id();
     metadata.filename = req.filename();
     metadata.file_size = req.file_size();
     metadata.mime_type = req.mime_type();
-    metadata.owner_id = user_id_;
+    metadata.sender_id = user_id_;
+    metadata.recipient_id = req.recipient_id();
+    metadata.channel_id = req.channel_id();
     
     if (!file_store.createFile(metadata)) {
         FileError err;
@@ -698,18 +698,23 @@ void Session::handle_file_request(const FileUploadRequest& req, const Envelope& 
     // Initialize upload state
     {
         std::lock_guard<std::mutex> lock(uploads_mutex_);
-        UploadState& state = active_uploads_[req.file_id()];
+        auto& state = active_uploads_[req.file_id()];
         state.file_id = req.file_id();
+        state.file_size = req.file_size();
+        state.chunk_size = req.chunk_size() > 0 ? req.chunk_size() : 65536;
+        state.total_chunks = static_cast<uint32_t>((req.file_size() + state.chunk_size - 1) / state.chunk_size);
+        state.received_chunks.resize(state.total_chunks, false);
         state.bytes_received = 0;
-        state.total_bytes = req.file_size();
-        state.start_time = std::chrono::steady_clock::now();
     }
     
-    // Send acknowledgement
-    FileResponse response;
-    response.set_file_id(req.file_id());
-    response.set_chunk_size(64 * 1024);  // 64 KB chunks
-    send_envelope(MT_FILE_RESPONSE, response);
+    // Send progress update as acknowledgment
+    FileProgress progress;
+    progress.set_file_id(req.file_id());
+    progress.set_bytes_transferred(0);
+    progress.set_total_bytes(req.file_size());
+    progress.set_percent_complete(0.0f);
+    progress.set_status("uploading");
+    send_envelope(MT_FILE_PROGRESS, progress);
     
     spdlog::info("[{}] File upload started: {} ({} bytes, {})",
         remote_endpoint_, req.file_id(), req.file_size(), req.filename());
@@ -730,41 +735,58 @@ void Session::handle_file_upload(const FileUploadChunk& chunk, const Envelope& r
     
     std::lock_guard<std::mutex> lock(uploads_mutex_);
     
-    // Get or create upload state
-    auto& upload = active_uploads_[chunk.file_id()];
+    // Find upload state
+    auto it = active_uploads_.find(chunk.file_id());
+    if (it == active_uploads_.end()) {
+        FileError err;
+        err.set_file_id(chunk.file_id());
+        err.set_error_code(4082);
+        err.set_error_message("Upload not started - send FileUploadRequest first");
+        send_envelope(MT_FILE_ERROR, err);
+        return;
+    }
+    
+    auto& upload = it->second;
+    
+    // Validate chunk index
+    if (chunk.chunk_index() >= upload.total_chunks) {
+        FileError err;
+        err.set_file_id(chunk.file_id());
+        err.set_error_code(4083);
+        err.set_error_message("Invalid chunk index");
+        send_envelope(MT_FILE_ERROR, err);
+        return;
+    }
     
     // Store the chunk
     std::vector<uint8_t> data(chunk.data().begin(), chunk.data().end());
     if (!file_store.storeChunk(chunk.file_id(), chunk.chunk_index(), data)) {
         FileError err;
         err.set_file_id(chunk.file_id());
-        err.set_error_code(4082);
+        err.set_error_code(4084);
         err.set_error_message("Failed to store chunk");
         send_envelope(MT_FILE_ERROR, err);
         return;
     }
     
     // Update state
+    upload.received_chunks[chunk.chunk_index()] = true;
     upload.bytes_received += data.size();
     
     // Send progress update
-    auto metadata = file_store.getFile(chunk.file_id());
-    if (metadata) {
-        FileProgress progress;
-        progress.set_file_id(chunk.file_id());
-        progress.set_bytes_transferred(upload.bytes_received);
-        progress.set_total_bytes(metadata->file_size);
-        progress.set_percent_complete(
-            static_cast<float>(upload.bytes_received) / metadata->file_size * 100.0f);
-        progress.set_status("uploading");
-        send_envelope(MT_FILE_PROGRESS, progress);
-    }
+    FileProgress progress;
+    progress.set_file_id(chunk.file_id());
+    progress.set_bytes_transferred(upload.bytes_received);
+    progress.set_total_bytes(upload.file_size);
+    progress.set_percent_complete(
+        static_cast<float>(upload.bytes_received) / upload.file_size * 100.0f);
+    progress.set_status("uploading");
+    send_envelope(MT_FILE_PROGRESS, progress);
     
     // If last chunk, mark complete
     if (chunk.is_last()) {
-        // Calculate checksum
-        // TODO: Implement full file checksum verification
-        std::vector<uint8_t> checksum; // placeholder
+        // TODO: Calculate full file checksum
+        std::vector<uint8_t> checksum;
         file_store.markComplete(chunk.file_id(), checksum);
         
         // Notify completion
@@ -773,11 +795,11 @@ void Session::handle_file_upload(const FileUploadChunk& chunk, const Envelope& r
         complete.set_total_bytes(upload.bytes_received);
         send_envelope(MT_FILE_COMPLETE, complete);
         
-        // Clean up upload state
-        active_uploads_.erase(chunk.file_id());
-        
         spdlog::info("[{}] File upload complete: {} ({} bytes)",
-            remote_endpoint_, chunk.file_id(), upload.bytes_received);
+            remote_endpoint_, chunk.file_id().c_str(), upload.bytes_received);
+        
+        // Clean up upload state
+        active_uploads_.erase(it);
     }
 }
 

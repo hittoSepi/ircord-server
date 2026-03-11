@@ -7,6 +7,15 @@
 
 namespace ircord::commands {
 
+// Helper to create CommandResponse
+inline CommandResponse make_response(bool success, const std::string& message, const std::string& command) {
+    CommandResponse resp;
+    resp.set_success(success);
+    resp.set_message(message);
+    resp.set_command(command);
+    return resp;
+}
+
 CommandHandler::CommandHandler(
     SessionFinder find_session,
     BroadcastFunc broadcast,
@@ -40,14 +49,14 @@ CommandHandler::CommandHandler(
 
 CommandResponse CommandHandler::handle_command(const IrcCommand& cmd, SessionPtr session) {
     if (cmd.command().empty()) {
-        return CommandResponse{false, "Empty command", ""};
+        return make_response(false, "Empty command", "");
     }
     
     const std::string& user_id = session->user_id();
     
     // Check if user is banned for abuse
     if (is_abuser(user_id)) {
-        return CommandResponse{false, "You are temporarily banned due to rate limit violations. Please wait.", cmd.command()};
+        return make_response(false, "You are temporarily banned due to rate limit violations. Please wait.", cmd.command());
     }
     
     // Get or create rate limits for this user
@@ -63,7 +72,7 @@ CommandResponse CommandHandler::handle_command(const IrcCommand& cmd, SessionPtr
         if (track_abuse(user_id)) {
             spdlog::warn("User {} banned for repeated command rate limit violations", user_id);
         }
-        return CommandResponse{false, "Rate limit exceeded: too many commands. Slow down.", cmd.command()};
+        return make_response(false, "Rate limit exceeded: too many commands. Slow down.", cmd.command());
     }
 
     std::string cmd_name = cmd.command();
@@ -71,14 +80,14 @@ CommandResponse CommandHandler::handle_command(const IrcCommand& cmd, SessionPtr
 
     auto it = command_map_.find(cmd_name);
     if (it == command_map_.end()) {
-        return CommandResponse{false, "Unknown command: " + cmd_name, cmd_name};
+        return make_response(false, "Unknown command: " + cmd_name, cmd_name);
     }
 
     std::vector<std::string> args(cmd.args().begin(), cmd.args().end());
     return it->second(args, session);
 }
 
-CommandHandler::ChannelState& CommandHandler::get_or_create_channel(const std::string& name) {
+ChannelState& CommandHandler::get_or_create_channel(const std::string& name) {
     auto it = channels_.find(name);
     if (it == channels_.end()) {
         ChannelState state;
@@ -92,12 +101,12 @@ CommandHandler::ChannelState& CommandHandler::get_or_create_channel(const std::s
 
 CommandResponse CommandHandler::cmd_join(const std::vector<std::string>& args, SessionPtr session) {
     if (args.empty()) {
-        return CommandResponse{false, "Usage: /join <#channel>", "join"};
+        return make_response(false, "Usage: /join <#channel>", "join");
     }
 
     std::string channel = args[0];
     if (channel.empty() || channel[0] != '#') {
-        return CommandResponse{false, "Channel name must start with #", "join"};
+        return make_response(false, "Channel name must start with #", "join");
     }
 
     const std::string& user_id = session->user_id();
@@ -114,17 +123,17 @@ CommandResponse CommandHandler::cmd_join(const std::vector<std::string>& args, S
         if (track_abuse(user_id)) {
             spdlog::warn("User {} banned for repeated join rate limit violations", user_id);
         }
-        return CommandResponse{false, "Rate limit exceeded: too many channel joins. Slow down.", "join"};
+        return make_response(false, "Rate limit exceeded: too many channel joins. Slow down.", "join");
     }
     
     auto& chan = get_or_create_channel(channel);
 
     if (chan.banned.count(user_id)) {
-        return CommandResponse{false, "You are banned from " + channel, "join"};
+        return make_response(false, "You are banned from " + channel, "join");
     }
 
     if (chan.invite_only && !chan.invites.count(user_id) && !chan.operators.count(user_id)) {
-        return CommandResponse{false, channel + " is invite-only", "join"};
+        return make_response(false, channel + " is invite-only", "join");
     }
 
     chan.members.insert(user_id);
@@ -138,14 +147,14 @@ CommandResponse CommandHandler::cmd_join(const std::vector<std::string>& args, S
     send_user_list(channel, session);
 
     std::string topic_msg = chan.topic.empty() ? "No topic set" : "Topic: " + chan.topic;
-    return CommandResponse{true, "Joined " + channel + "\n" + topic_msg, "join"};
+    return make_response(true, "Joined " + channel + "\n" + topic_msg, "join");
 }
 
 CommandResponse CommandHandler::cmd_part(const std::vector<std::string>& args, SessionPtr session) {
     const std::string& user_id = session->user_id();
     
     if (args.empty()) {
-        return CommandResponse{false, "Usage: /part <#channel> [message]", "part"};
+        return make_response(false, "Usage: /part <#channel> [message]", "part");
     }
 
     std::string channel = args[0];
@@ -153,12 +162,12 @@ CommandResponse CommandHandler::cmd_part(const std::vector<std::string>& args, S
 
     auto it = channels_.find(channel);
     if (it == channels_.end()) {
-        return CommandResponse{false, "No such channel: " + channel, "part"};
+        return make_response(false, "No such channel: " + channel, "part");
     }
 
     auto& chan = it->second;
     if (!chan.members.count(user_id)) {
-        return CommandResponse{false, "You are not in " + channel, "part"};
+        return make_response(false, "You are not in " + channel, "part");
     }
 
     chan.members.erase(user_id);
@@ -172,12 +181,12 @@ CommandResponse CommandHandler::cmd_part(const std::vector<std::string>& args, S
         spdlog::info("{} was destroyed (empty)", channel);
     }
 
-    return CommandResponse{true, "Left " + channel, "part"};
+    return make_response(true, "Left " + channel, "part");
 }
 
 CommandResponse CommandHandler::cmd_nick(const std::vector<std::string>& args, SessionPtr session) {
     if (args.empty()) {
-        return CommandResponse{false, "Usage: /nick <new_nick>", "nick"};
+        return make_response(false, "Usage: /nick <new_nick>", "nick");
     }
 
     std::string new_nick = args[0];
@@ -186,7 +195,7 @@ CommandResponse CommandHandler::cmd_nick(const std::vector<std::string>& args, S
 
     // Check if nick is taken
     if (nick_to_user_id_.count(new_nick) && nick_to_user_id_[new_nick] != user_id) {
-        return CommandResponse{false, "Nickname " + new_nick + " is already in use", "nick"};
+        return make_response(false, "Nickname " + new_nick + " is already in use", "nick");
     }
 
     // Remove old mapping
@@ -211,12 +220,12 @@ CommandResponse CommandHandler::cmd_nick(const std::vector<std::string>& args, S
     }
 
     spdlog::info("{} changed nick to {}", user_id, new_nick);
-    return CommandResponse{true, "You are now known as " + new_nick, "nick"};
+    return make_response(true, "You are now known as " + new_nick, "nick");
 }
 
 CommandResponse CommandHandler::cmd_whois(const std::vector<std::string>& args, SessionPtr session) {
     if (args.empty()) {
-        return CommandResponse{false, "Usage: /whois <nick>", "whois"};
+        return make_response(false, "Usage: /whois <nick>", "whois");
     }
 
     std::string target = args[0];
@@ -243,12 +252,12 @@ CommandResponse CommandHandler::cmd_whois(const std::vector<std::string>& args, 
 
     // TODO: Add identity fingerprint from database
 
-    return CommandResponse{true, info.SerializeAsString(), "whois"};
+    return make_response(true, info.SerializeAsString(), "whois");
 }
 
 CommandResponse CommandHandler::cmd_me(const std::vector<std::string>& args, SessionPtr session) {
     if (args.empty()) {
-        return CommandResponse{false, "Usage: /me <action>", "me"};
+        return make_response(false, "Usage: /me <action>", "me");
     }
 
     std::string action = args[0];
@@ -260,36 +269,36 @@ CommandResponse CommandHandler::cmd_me(const std::vector<std::string>& args, Ses
     // The client handles rendering them differently
     // For now, just acknowledge
     
-    return CommandResponse{true, "Action: " + session->user_id() + " " + action, "me"};
+    return make_response(true, "Action: " + session->user_id() + " " + action, "me");
 }
 
 CommandResponse CommandHandler::cmd_topic(const std::vector<std::string>& args, SessionPtr session) {
     if (args.empty()) {
-        return CommandResponse{false, "Usage: /topic <#channel> [new_topic]", "topic"};
+        return make_response(false, "Usage: /topic <#channel> [new_topic]", "topic");
     }
 
     std::string channel = args[0];
     auto it = channels_.find(channel);
     if (it == channels_.end()) {
-        return CommandResponse{false, "No such channel: " + channel, "topic"};
+        return make_response(false, "No such channel: " + channel, "topic");
     }
 
     auto& chan = it->second;
     const std::string& user_id = session->user_id();
 
     if (!chan.members.count(user_id)) {
-        return CommandResponse{false, "You are not in " + channel, "topic"};
+        return make_response(false, "You are not in " + channel, "topic");
     }
 
     // If no topic provided, just show current
     if (args.size() < 2) {
         std::string topic = chan.topic.empty() ? "No topic set" : chan.topic;
-        return CommandResponse{true, topic, "topic"};
+        return make_response(true, topic, "topic");
     }
 
     // Check permission
     if (chan.topic_restricted && !chan.operators.count(user_id)) {
-        return CommandResponse{false, "Only operators can change the topic", "topic"};
+        return make_response(false, "Only operators can change the topic", "topic");
     }
 
     // Set topic
@@ -301,12 +310,12 @@ CommandResponse CommandHandler::cmd_topic(const std::vector<std::string>& args, 
     // Broadcast topic change
     notify_channel_join(channel, user_id); // Reuse join notification for now
 
-    return CommandResponse{true, "Topic changed to: " + chan.topic, "topic"};
+    return make_response(true, "Topic changed to: " + chan.topic, "topic");
 }
 
 CommandResponse CommandHandler::cmd_kick(const std::vector<std::string>& args, SessionPtr session) {
     if (args.size() < 2) {
-        return CommandResponse{false, "Usage: /kick <#channel> <nick> [reason]", "kick"};
+        return make_response(false, "Usage: /kick <#channel> <nick> [reason]", "kick");
     }
 
     std::string channel = args[0];
@@ -315,14 +324,14 @@ CommandResponse CommandHandler::cmd_kick(const std::vector<std::string>& args, S
 
     auto it = channels_.find(channel);
     if (it == channels_.end()) {
-        return CommandResponse{false, "No such channel: " + channel, "kick"};
+        return make_response(false, "No such channel: " + channel, "kick");
     }
 
     auto& chan = it->second;
     const std::string& user_id = session->user_id();
 
     if (!chan.operators.count(user_id)) {
-        return CommandResponse{false, "Only operators can kick users", "kick"};
+        return make_response(false, "Only operators can kick users", "kick");
     }
 
     // Look up target
@@ -332,11 +341,11 @@ CommandResponse CommandHandler::cmd_kick(const std::vector<std::string>& args, S
     } else if (chan.members.count(target)) {
         target_id = target;
     } else {
-        return CommandResponse{false, "User not found: " + target, "kick"};
+        return make_response(false, "User not found: " + target, "kick");
     }
 
     if (!chan.members.count(target_id)) {
-        return CommandResponse{false, target + " is not in " + channel, "kick"};
+        return make_response(false, target + " is not in " + channel, "kick");
     }
 
     // Remove from channel
@@ -349,19 +358,19 @@ CommandResponse CommandHandler::cmd_kick(const std::vector<std::string>& args, S
     // Notify the kicked user
     auto target_session = find_session_(target_id);
     if (target_session) {
-        CommandResponse kick_msg{false, "You were kicked from " + channel + " by " + user_id + ": " + reason, "kick"};
+        auto kick_msg = make_response(false, "You were kicked from " + channel + " by " + user_id + ": " + reason, "kick");
         Envelope env;
         env.set_type(MT_COMMAND_RESPONSE);
         kick_msg.SerializeToString(env.mutable_payload());
         target_session->send(env);
     }
 
-    return CommandResponse{true, "Kicked " + target + " from " + channel, "kick"};
+    return make_response(true, "Kicked " + target + " from " + channel, "kick");
 }
 
 CommandResponse CommandHandler::cmd_ban(const std::vector<std::string>& args, SessionPtr session) {
     if (args.size() < 2) {
-        return CommandResponse{false, "Usage: /ban <#channel> <nick>", "ban"};
+        return make_response(false, "Usage: /ban <#channel> <nick>", "ban");
     }
 
     std::string channel = args[0];
@@ -369,14 +378,14 @@ CommandResponse CommandHandler::cmd_ban(const std::vector<std::string>& args, Se
 
     auto it = channels_.find(channel);
     if (it == channels_.end()) {
-        return CommandResponse{false, "No such channel: " + channel, "ban"};
+        return make_response(false, "No such channel: " + channel, "ban");
     }
 
     auto& chan = it->second;
     const std::string& user_id = session->user_id();
 
     if (!chan.operators.count(user_id)) {
-        return CommandResponse{false, "Only operators can ban users", "ban"};
+        return make_response(false, "Only operators can ban users", "ban");
     }
 
     std::string target_id = nick_to_user_id_.count(target) ? nick_to_user_id_[target] : target;
@@ -388,12 +397,12 @@ CommandResponse CommandHandler::cmd_ban(const std::vector<std::string>& args, Se
         notify_channel_part(channel, target_id, "Banned by " + user_id);
     }
 
-    return CommandResponse{true, "Banned " + target + " from " + channel, "ban"};
+    return make_response(true, "Banned " + target + " from " + channel, "ban");
 }
 
 CommandResponse CommandHandler::cmd_invite(const std::vector<std::string>& args, SessionPtr session) {
     if (args.size() < 2) {
-        return CommandResponse{false, "Usage: /invite <#channel> <nick> [message]", "invite"};
+        return make_response(false, "Usage: /invite <#channel> <nick> [message]", "invite");
     }
 
     std::string channel = args[0];
@@ -402,14 +411,14 @@ CommandResponse CommandHandler::cmd_invite(const std::vector<std::string>& args,
 
     auto it = channels_.find(channel);
     if (it == channels_.end()) {
-        return CommandResponse{false, "No such channel: " + channel, "invite"};
+        return make_response(false, "No such channel: " + channel, "invite");
     }
 
     auto& chan = it->second;
     const std::string& user_id = session->user_id();
 
     if (!chan.operators.count(user_id)) {
-        return CommandResponse{false, "Only operators can invite users", "invite"};
+        return make_response(false, "Only operators can invite users", "invite");
     }
 
     std::string target_id = nick_to_user_id_.count(target) ? nick_to_user_id_[target] : target;
@@ -418,20 +427,20 @@ CommandResponse CommandHandler::cmd_invite(const std::vector<std::string>& args,
     // Notify target if online
     auto target_session = find_session_(target_id);
     if (target_session) {
-        CommandResponse invite_msg{true, user_id + " invited you to " + channel + 
-            (message.empty() ? "" : ": " + message), "invite"};
+        auto invite_msg = make_response(true, user_id + " invited you to " + channel + 
+            (message.empty() ? "" : ": " + message), "invite");
         Envelope env;
         env.set_type(MT_COMMAND_RESPONSE);
         invite_msg.SerializeToString(env.mutable_payload());
         target_session->send(env);
     }
 
-    return CommandResponse{true, "Invited " + target + " to " + channel, "invite"};
+    return make_response(true, "Invited " + target + " to " + channel, "invite");
 }
 
 CommandResponse CommandHandler::cmd_set(const std::vector<std::string>& args, SessionPtr session) {
     if (args.size() < 3) {
-        return CommandResponse{false, "Usage: /set <#channel> <option> <value>", "set"};
+        return make_response(false, "Usage: /set <#channel> <option> <value>", "set");
     }
 
     std::string channel = args[0];
@@ -440,35 +449,35 @@ CommandResponse CommandHandler::cmd_set(const std::vector<std::string>& args, Se
 
     auto it = channels_.find(channel);
     if (it == channels_.end()) {
-        return CommandResponse{false, "No such channel: " + channel, "set"};
+        return make_response(false, "No such channel: " + channel, "set");
     }
 
     auto& chan = it->second;
     const std::string& user_id = session->user_id();
 
     if (!chan.operators.count(user_id)) {
-        return CommandResponse{false, "Only operators can change channel settings", "set"};
+        return make_response(false, "Only operators can change channel settings", "set");
     }
 
     std::transform(option.begin(), option.end(), option.begin(), ::tolower);
 
     if (option == "invite_only") {
         chan.invite_only = (value == "true" || value == "1" || value == "on");
-        return CommandResponse{true, "invite_only set to " + std::string(chan.invite_only ? "true" : "false"), "set"};
+        return make_response(true, "invite_only set to " + std::string(chan.invite_only ? "true" : "false"), "set");
     } else if (option == "moderated") {
         chan.moderated = (value == "true" || value == "1" || value == "on");
-        return CommandResponse{true, "moderated set to " + std::string(chan.moderated ? "true" : "false"), "set"};
+        return make_response(true, "moderated set to " + std::string(chan.moderated ? "true" : "false"), "set");
     } else if (option == "topic_restricted") {
         chan.topic_restricted = (value == "true" || value == "1" || value == "on");
-        return CommandResponse{true, "topic_restricted set to " + std::string(chan.topic_restricted ? "true" : "false"), "set"};
+        return make_response(true, "topic_restricted set to " + std::string(chan.topic_restricted ? "true" : "false"), "set");
     }
 
-    return CommandResponse{false, "Unknown option: " + option, "set"};
+    return make_response(false, "Unknown option: " + option, "set");
 }
 
 CommandResponse CommandHandler::cmd_mode(const std::vector<std::string>& args, SessionPtr session) {
     if (args.size() < 3) {
-        return CommandResponse{false, "Usage: /mode <#channel> <+o|-o> <nick>", "mode"};
+        return make_response(false, "Usage: /mode <#channel> <+o|-o> <nick>", "mode");
     }
 
     std::string channel = args[0];
@@ -477,37 +486,37 @@ CommandResponse CommandHandler::cmd_mode(const std::vector<std::string>& args, S
 
     auto it = channels_.find(channel);
     if (it == channels_.end()) {
-        return CommandResponse{false, "No such channel: " + channel, "mode"};
+        return make_response(false, "No such channel: " + channel, "mode");
     }
 
     auto& chan = it->second;
     const std::string& user_id = session->user_id();
 
     if (!chan.operators.count(user_id)) {
-        return CommandResponse{false, "Only operators can change modes", "mode"};
+        return make_response(false, "Only operators can change modes", "mode");
     }
 
     std::string target_id = nick_to_user_id_.count(target) ? nick_to_user_id_[target] : target;
     
     if (!chan.members.count(target_id)) {
-        return CommandResponse{false, target + " is not in " + channel, "mode"};
+        return make_response(false, target + " is not in " + channel, "mode");
     }
 
     if (mode == "+o") {
         chan.operators.insert(target_id);
-        return CommandResponse{true, "Gave operator status to " + target, "mode"};
+        return make_response(true, "Gave operator status to " + target, "mode");
     } else if (mode == "-o") {
         chan.operators.erase(target_id);
-        return CommandResponse{true, "Removed operator status from " + target, "mode"};
+        return make_response(true, "Removed operator status from " + target, "mode");
     } else if (mode == "+v") {
         chan.voiced.insert(target_id);
-        return CommandResponse{true, "Gave voice to " + target, "mode"};
+        return make_response(true, "Gave voice to " + target, "mode");
     } else if (mode == "-v") {
         chan.voiced.erase(target_id);
-        return CommandResponse{true, "Removed voice from " + target, "mode"};
+        return make_response(true, "Removed voice from " + target, "mode");
     }
 
-    return CommandResponse{false, "Unknown mode: " + mode, "mode"};
+    return make_response(false, "Unknown mode: " + mode, "mode");
 }
 
 // ============================================================================
@@ -535,7 +544,7 @@ void CommandHandler::send_user_list(const std::string& channel, SessionPtr sessi
         user_list += prefix + nick + "\n";
     }
 
-    CommandResponse response{true, user_list, "names"};
+    auto response = make_response(true, user_list, "names");
     Envelope env;
     env.set_type(MT_COMMAND_RESPONSE);
     response.SerializeToString(env.mutable_payload());
@@ -624,7 +633,7 @@ void CommandHandler::part_channel(const std::string& channel, const std::string&
 // ============================================================================
 CommandResponse CommandHandler::cmd_password(const std::vector<std::string>& args, SessionPtr session) {
     if (args.size() < 2) {
-        return CommandResponse{false, "Usage: /password <old_password> <new_password>", "password"};
+        return make_response(false, "Usage: /password <old_password> <new_password>", "password");
     }
 
     const std::string& user_id = session->user_id();
@@ -633,7 +642,7 @@ CommandResponse CommandHandler::cmd_password(const std::vector<std::string>& arg
 
     // Validate new password length
     if (new_pass.length() < 8) {
-        return CommandResponse{false, "New password must be at least 8 characters", "password"};
+        return make_response(false, "New password must be at least 8 characters", "password");
     }
 
     // TODO: Verify old password and update in database
@@ -641,7 +650,7 @@ CommandResponse CommandHandler::cmd_password(const std::vector<std::string>& arg
     // For now, we return a placeholder response
     
     spdlog::info("Password change requested for {}", user_id);
-    return CommandResponse{true, "Password updated successfully", "password"};
+    return make_response(true, "Password updated successfully", "password");
 }
 
 // ============================================================================
@@ -668,7 +677,7 @@ CommandResponse CommandHandler::cmd_quit(const std::vector<std::string>& args, S
     session->disconnect("Quit: " + reason);
 
     spdlog::info("{} quit ({})", user_id, reason);
-    return CommandResponse{true, "Goodbye!", "quit"};
+    return make_response(true, "Goodbye!", "quit");
 }
 
 // ============================================================================
@@ -676,7 +685,7 @@ CommandResponse CommandHandler::cmd_quit(const std::vector<std::string>& args, S
 // ============================================================================
 CommandResponse CommandHandler::cmd_msg(const std::vector<std::string>& args, SessionPtr session) {
     if (args.size() < 2) {
-        return CommandResponse{false, "Usage: /msg <nick> <message>", "msg"};
+        return make_response(false, "Usage: /msg <nick> <message>", "msg");
     }
 
     std::string target = args[0];
@@ -696,7 +705,7 @@ CommandResponse CommandHandler::cmd_msg(const std::vector<std::string>& args, Se
     // Find target session
     auto target_session = find_session_(target_id);
     if (!target_session) {
-        return CommandResponse{false, target + " is offline", "msg"};
+        return make_response(false, target + " is offline", "msg");
     }
 
     // Send the message as a private message envelope
@@ -704,7 +713,7 @@ CommandResponse CommandHandler::cmd_msg(const std::vector<std::string>& args, Se
     // The actual message delivery would be handled via the chat envelope flow
 
     spdlog::debug("Private message from {} to {}: {}", session->user_id(), target_id, message);
-    return CommandResponse{true, "-> " + target + ": " + message, "msg"};
+    return make_response(true, "-> " + target + ": " + message, "msg");
 }
 
 // ============================================================================

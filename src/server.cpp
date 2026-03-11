@@ -45,6 +45,7 @@ Server::Server(const ServerConfig& config)
         db_            = std::make_unique<db::Database>(config_.db_path);
         user_store_    = std::make_unique<db::UserStore>(*db_);
         offline_store_ = std::make_unique<db::OfflineStore>(*db_);
+        file_store_    = std::make_unique<db::FileStore>(*db_);
         spdlog::info("Database layer initialized: {}", config_.db_path);
     } catch (const std::exception& e) {
         spdlog::error("Failed to initialize database: {}", e.what());
@@ -67,8 +68,9 @@ Server::Server(const ServerConfig& config)
         ioc_, ssl_ctx_, config_.host, config_.port,
         *user_store_, *offline_store_);
 
-    // Set database for command handler
+    // Set database and file store for listener
     listener_->set_database(*db_);
+    listener_->set_file_store(*file_store_);
 
     // Set ping intervals
     listener_->set_ping_intervals(
@@ -234,6 +236,12 @@ void Server::schedule_cleanup() {
         }
         if (offline_store_) {
             offline_store_->cleanup_expired();
+        }
+        if (file_store_) {
+            int cleaned = file_store_->cleanupExpired();
+            if (cleaned > 0) {
+                spdlog::info("Cleaned up {} expired files", cleaned);
+            }
         }
         schedule_cleanup();
     });
