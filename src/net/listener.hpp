@@ -4,6 +4,7 @@
 #include "rate_limiter.hpp"
 #include "db/user_store.hpp"
 #include "db/offline_store.hpp"
+#include "commands/command_handler.hpp"
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/strand.hpp>
@@ -46,6 +47,8 @@ public:
     std::shared_ptr<Session> find_session(const std::string& user_id) override;
     db::UserStore& user_store() override { return user_store_; }
     db::OfflineStore& offline_store() override { return offline_store_; }
+    db::Database& database() override;
+    commands::CommandHandler* command_handler() override { return command_handler_.get(); }
 
     // Getters
     int ping_interval_sec() const override { return ping_interval_sec_; }
@@ -56,6 +59,9 @@ public:
     void set_ping_intervals(int interval_sec, int timeout_sec);
     void set_rate_limits(int msg_rate_per_sec, int conn_rate_per_min);
     void set_max_connections(int max_connections);
+
+    // Set database reference (for command handler)
+    void set_database(db::Database& db) { db_ = &db; }
 
 private:
     void do_accept();
@@ -76,6 +82,10 @@ private:
     // DB stores
     db::UserStore& user_store_;
     db::OfflineStore& offline_store_;
+    db::Database* db_ = nullptr;
+
+    // Command handler
+    std::unique_ptr<commands::CommandHandler> command_handler_;
 
     // Active sessions
     std::unordered_map<std::string, std::shared_ptr<Session>> sessions_by_user_;

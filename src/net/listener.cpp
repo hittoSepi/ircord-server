@@ -58,6 +58,19 @@ Listener::~Listener() {
 }
 
 void Listener::run() {
+    // Initialize command handler if database is set
+    if (db_) {
+        auto find_session = [this](const std::string& user_id) -> std::shared_ptr<Session> {
+            return this->find_session(user_id);
+        };
+        auto broadcast = [this](const Envelope& env, std::shared_ptr<Session> exclude) {
+            this->broadcast(env, exclude);
+        };
+        command_handler_ = std::make_unique<commands::CommandHandler>(
+            find_session, broadcast, *db_);
+        spdlog::info("Command handler initialized");
+    }
+
     // Start accepting connections
     do_accept();
 
@@ -282,6 +295,13 @@ void Listener::set_rate_limits(int msg_rate_per_sec, int conn_rate_per_min) {
 
 void Listener::set_max_connections(int max_connections) {
     max_connections_ = max_connections;
+}
+
+db::Database& Listener::database() {
+    if (!db_) {
+        throw std::runtime_error("Database not set");
+    }
+    return *db_;
 }
 
 void Listener::cleanup_dead_sessions() {

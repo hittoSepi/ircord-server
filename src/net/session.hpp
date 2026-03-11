@@ -15,7 +15,8 @@
 #include "net/rate_limiter.hpp"
 
 // Forward declarations for db types (avoid pulling heavy headers into every TU)
-namespace ircord::db { class UserStore; class OfflineStore; }
+namespace ircord::db { class UserStore; class OfflineStore; class Database; }
+namespace ircord::commands { class CommandHandler; }
 
 namespace ircord::net {
 
@@ -80,6 +81,7 @@ private:
     void handle_key_upload(const KeyUpload& ku);
     void handle_key_request(const KeyRequest& kr);
     void handle_voice_signal(const VoiceSignal& vs, const Envelope& raw);
+    void handle_command(const IrcCommand& cmd);
 
     // Send helpers
     void send_envelope(MessageType type, const google::protobuf::Message& msg);
@@ -150,6 +152,10 @@ public:
     // DB stores for auth and offline delivery
     virtual db::UserStore& user_store() = 0;
     virtual db::OfflineStore& offline_store() = 0;
+    virtual db::Database& database() = 0;
+
+    // Command handler for IRC commands
+    virtual commands::CommandHandler* command_handler() = 0;
 
     // Get current config values
     virtual int ping_interval_sec() const = 0;

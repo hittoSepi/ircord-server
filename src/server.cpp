@@ -67,6 +67,9 @@ Server::Server(const ServerConfig& config)
         ioc_, ssl_ctx_, config_.host, config_.port,
         *user_store_, *offline_store_);
 
+    // Set database for command handler
+    listener_->set_database(*db_);
+
     // Set ping intervals
     listener_->set_ping_intervals(
         config_.ping_interval_sec,

@@ -2,6 +2,7 @@
 #include "config.hpp"
 #include "db/user_store.hpp"
 #include "db/offline_store.hpp"
+#include "commands/command_handler.hpp"
 
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/read.hpp>
@@ -297,6 +298,20 @@ void Session::handle_envelope(const Envelope& env) {
             }
         } else {
             send_error(4051, "Not authenticated");
+        }
+        break;
+
+    case MT_COMMAND:
+        if (state_ == SessionState::Established) {
+            IrcCommand cmd;
+            if (!env.payload().empty() && cmd.ParseFromArray(
+                    env.payload().data(), static_cast<int>(env.payload().size()))) {
+                handle_command(cmd);
+            } else {
+                send_error(4060, "Invalid COMMAND");
+            }
+        } else {
+            send_error(4061, "Not authenticated");
         }
         break;
 
@@ -706,6 +721,25 @@ void Session::set_state(SessionState new_state) {
     state_ = new_state;
     spdlog::trace("[{}] State: {} -> {}", remote_endpoint_,
         static_cast<int>(old_state), static_cast<int>(new_state));
+}
+
+void Session::handle_command(const IrcCommand& cmd) {
+    spdlog::debug("[{}] COMMAND: {} from {}", remote_endpoint_, cmd.command(), user_id_);
+
+    // Get command handler from server context
+    auto* cmd_handler = server_ctx_.command_handler();
+    if (!cmd_handler) {
+        send_error(4062, "Command handler not available");
+        return;
+    }
+
+    CommandResponse response = cmd_handler->handle_command(cmd, shared_from_this());
+
+    // Send response back to client
+    Envelope env;
+    env.set_type(MT_COMMAND_RESPONSE);
+    response.SerializeToString(env.mutable_payload());
+    send(env);
 }
 
 } // namespace ircord::net
