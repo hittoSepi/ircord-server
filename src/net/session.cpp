@@ -476,18 +476,28 @@ void Session::handle_chat(const ChatEnvelope& chat, const Envelope& raw) {
         return;
     }
 
-    // Route: online → direct send, offline → store
-    auto recipient_session = server_ctx_.find_session(chat.recipient_id());
+    const std::string& recipient = chat.recipient_id();
+
+    // Channel fanout: broadcast to all authenticated sessions except sender
+    if (!recipient.empty() && recipient[0] == '#') {
+        server_ctx_.broadcast(raw, shared_from_this());
+        spdlog::debug("[{}] Broadcast CHAT from {} to channel {}",
+            remote_endpoint_, user_id_, recipient);
+        return;
+    }
+
+    // 1:1 DM: route to recipient or store offline
+    auto recipient_session = server_ctx_.find_session(recipient);
     if (recipient_session) {
         recipient_session->send(raw);
         spdlog::debug("[{}] Routed CHAT {} -> {} (online)",
-            remote_endpoint_, user_id_, chat.recipient_id());
+            remote_endpoint_, user_id_, recipient);
     } else {
         std::vector<uint8_t> payload(raw.ByteSizeLong());
         raw.SerializeToArray(payload.data(), static_cast<int>(payload.size()));
-        server_ctx_.offline_store().save(chat.recipient_id(), payload);
+        server_ctx_.offline_store().save(recipient, payload);
         spdlog::debug("[{}] Stored CHAT {} -> {} (offline)",
-            remote_endpoint_, user_id_, chat.recipient_id());
+            remote_endpoint_, user_id_, recipient);
     }
 }
 
@@ -571,6 +581,8 @@ void Session::handle_key_request(const KeyRequest& kr) {
     if (!opk.empty()) {
         bundle.set_one_time_prekey(opk.data(), opk.size());
     }
+
+    bundle.set_recipient_for(kr.user_id());
 
     spdlog::debug("[{}] KEY_REQUEST: sending bundle for {} (opk={})",
         remote_endpoint_, kr.user_id(), !opk.empty());

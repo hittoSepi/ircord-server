@@ -72,6 +72,7 @@ message KeyBundle {
   uint32 spk_id             = 4;
   bytes  one_time_prekey    = 5;  // X25519 one-time pre-key (removed after use)
   uint32 opk_id             = 6;
+  string recipient_for      = 7;  // user_id whose bundle was requested (echoed by server)
 }
 
 message KeyUpload {
@@ -93,6 +94,7 @@ message ChatEnvelope {
   string recipient_id  = 2;  // user_id or "#channel_name"
   bytes  ciphertext    = 3;  // Signal Protocol ciphertext
   uint32 ciphertext_type = 4; // WHISPER_MESSAGE=1, PRE_KEY_MESSAGE=3, SENDER_KEY=4
+  bytes  skdm          = 5;  // SenderKeyDistributionMessage (type=4, first send only)
 }
 
 // Presence messages
