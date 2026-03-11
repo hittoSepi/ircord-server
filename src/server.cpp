@@ -47,6 +47,23 @@ Server::Server(const ServerConfig& config)
         offline_store_ = std::make_unique<db::OfflineStore>(*db_);
         file_store_    = std::make_unique<db::FileStore>(*db_);
         spdlog::info("Database layer initialized: {}", config_.db_path);
+        
+        // Initialize file encryption if master key is configured
+        if (!config_.file_encryption_key.empty()) {
+            file_store_->init_encryption(config_.file_encryption_key);
+        } else {
+            spdlog::warn("File encryption key not configured - files will be stored unencrypted!");
+        }
+        
+        // Initialize virus scanner (optional)
+        if (!config_.clamav_socket.empty()) {
+            security::VirusScannerManager::instance().initialize(config_.clamav_socket);
+        } else if (config_.clamav_port > 0) {
+            security::VirusScannerManager::instance().initialize(
+                config_.clamav_host, config_.clamav_port);
+        } else {
+            spdlog::info("VirusScanner: Not configured (set clamav_socket or clamav_host/port)");
+        }
     } catch (const std::exception& e) {
         spdlog::error("Failed to initialize database: {}", e.what());
         throw;

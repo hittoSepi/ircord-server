@@ -113,6 +113,14 @@ struct ServerConfig {
     int abuse_threshold = 5;                 // violations before ban
     int abuse_window_min = 10;               // violation window in minutes
     int ban_duration_min = 30;               // ban duration in minutes
+    
+    // [security]
+    std::string file_encryption_key;         // Master key for file encryption (64 hex chars)
+    
+    // [antivirus]
+    std::string clamav_socket;               // Unix socket path for clamd
+    std::string clamav_host = "127.0.0.1";   // TCP host for clamd
+    uint16_t clamav_port = 0;                // TCP port for clamd (0 = disabled)
 };
 
 class ConfigLoader {

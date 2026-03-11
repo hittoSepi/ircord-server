@@ -1,11 +1,13 @@
 #pragma once
 
 #include "database.hpp"
+#include "crypto/file_encryptor.hpp"
 
 #include <string>
 #include <vector>
 #include <optional>
 #include <chrono>
+#include <memory>
 
 namespace ircord::db {
 
@@ -25,6 +27,10 @@ struct FileMetadata {
     std::vector<uint8_t> file_checksum;  // SHA-256
     std::string storage_path;  // Filesystem path
     bool is_complete = false;  // All chunks received
+    
+    // Encryption fields
+    bool is_encrypted = false;  // Whether file is encrypted at rest
+    std::vector<uint8_t> encrypted_key;  // Encrypted data encryption key (DEK)
 };
 
 /**
@@ -43,6 +49,17 @@ struct FileChunkInfo {
 class FileStore {
 public:
     explicit FileStore(Database& db);
+    
+    /**
+     * Initialize encryption with master key.
+     * Call this before any encryption operations.
+     */
+    void init_encryption(const std::string& master_key_hex);
+    
+    /**
+     * Check if encryption is enabled.
+     */
+    bool encryption_enabled() const;
 
     // ============================================================================
     // File Metadata
@@ -115,6 +132,20 @@ public:
      * Get received bytes for a file.
      */
     uint64_t getReceivedBytes(const std::string& file_id);
+    
+    /**
+     * Encrypt and store a chunk (for completed files).
+     * This re-encrypts the chunk with the file's DEK.
+     */
+    bool encryptAndStoreChunk(
+        const std::string& file_id,
+        const std::vector<uint8_t>& plaintext);
+    
+    /**
+     * Decrypt and retrieve a chunk.
+     */
+    std::optional<std::vector<uint8_t>> decryptAndGetChunk(
+        const std::string& file_id);
 
     // ============================================================================
     // Cleanup
@@ -139,12 +170,23 @@ public:
 
 private:
     Database& db_;
+    std::unique_ptr<crypto::FileEncryptor> encryptor_;
     static constexpr int64_t kDefaultTtlSeconds = 7 * 24 * 3600;  // 7 days
 
     int64_t nowUnix() const {
         return std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
     }
+    
+    // Encrypt file data if encryption is enabled
+    std::optional<std::vector<uint8_t>> maybe_encrypt(
+        const std::vector<uint8_t>& data,
+        std::vector<uint8_t>& out_encrypted_key);
+    
+    // Decrypt file data if encrypted
+    std::optional<std::vector<uint8_t>> maybe_decrypt(
+        const std::vector<uint8_t>& data,
+        const std::vector<uint8_t>& encrypted_key);
 };
 
 } // namespace ircord::db

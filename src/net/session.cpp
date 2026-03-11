@@ -4,6 +4,7 @@
 #include "db/offline_store.hpp"
 #include "db/file_store.hpp"
 #include "commands/command_handler.hpp"
+#include "security/virus_scanner.hpp"
 
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/read.hpp>
@@ -271,6 +272,31 @@ void Session::handle_envelope(const Envelope& env) {
             }
         } else {
             send_error(4071, "Not authenticated");
+        }
+        break;
+
+
+    case MT_VOICE_ROOM_JOIN:
+        if (state_ == SessionState::Established) {
+            VoiceRoomJoin join;
+            if (!env.payload().empty() && join.ParseFromArray(
+                    env.payload().data(), static_cast<int>(env.payload().size()))) {
+                handle_voice_room_join(join);
+            } else {
+                send_error(4075, "Invalid VOICE_ROOM_JOIN");
+            }
+        }
+        break;
+
+    case MT_VOICE_ROOM_LEAVE:
+        if (state_ == SessionState::Established) {
+            VoiceRoomLeave leave;
+            if (!env.payload().empty() && leave.ParseFromArray(
+                    env.payload().data(), static_cast<int>(env.payload().size()))) {
+                handle_voice_room_leave(leave);
+            } else {
+                send_error(4076, "Invalid VOICE_ROOM_LEAVE");
+            }
         }
         break;
 
@@ -598,6 +624,19 @@ void Session::handle_voice_signal(const VoiceSignal& vs, const Envelope& raw) {
     }
 }
 
+
+void Session::handle_voice_room_join(const VoiceRoomJoin& join) {
+    std::string error = server_ctx_.voice_room_manager().join(
+        join.channel_id(), user_id_);
+    if (!error.empty()) {
+        send_error(4077, error);
+    }
+}
+
+void Session::handle_voice_room_leave(const VoiceRoomLeave& leave) {
+    server_ctx_.voice_room_manager().leave(leave.channel_id(), user_id_);
+}
+
 void Session::handle_key_upload(const KeyUpload& ku) {
     auto& us = server_ctx_.user_store();
 
@@ -785,6 +824,52 @@ void Session::handle_file_upload(const FileUploadChunk& chunk, const Envelope& r
     
     // If last chunk, mark complete
     if (chunk.is_last()) {
+        // Assemble all chunks for virus scanning
+        std::vector<uint8_t> assembled_file;
+        assembled_file.reserve(upload.file_size);
+        
+        for (uint32_t i = 0; i < upload.total_chunks; ++i) {
+            auto chunk_data = file_store.getChunk(chunk.file_id(), i);
+            if (chunk_data) {
+                assembled_file.insert(assembled_file.end(), 
+                    chunk_data->begin(), chunk_data->end());
+            }
+        }
+        
+        // Virus scan
+        auto& scanner_mgr = security::VirusScannerManager::instance();
+        if (scanner_mgr.is_enabled()) {
+            spdlog::debug("[{}] Scanning file {} for viruses ({} bytes)",
+                remote_endpoint_, chunk.file_id(), assembled_file.size());
+            
+            auto scan_result = scanner_mgr.scan(assembled_file);
+            
+            if (scan_result.error) {
+                spdlog::warn("[{}] Virus scan failed for {}: {}",
+                    remote_endpoint_, chunk.file_id(), scan_result.error_message);
+                // Continue anyway - fail open for availability
+            } else if (!scan_result.clean) {
+                spdlog::error("[{}] THREAT DETECTED in file {}: {}",
+                    remote_endpoint_, chunk.file_id(), scan_result.virus_name);
+                
+                // Delete infected file
+                file_store.deleteFile(chunk.file_id());
+                
+                // Notify client
+                FileError err;
+                err.set_file_id(chunk.file_id());
+                err.set_error_code(4090);
+                err.set_error_message("Threat detected: " + scan_result.virus_name);
+                send_envelope(MT_FILE_ERROR, err);
+                
+                active_uploads_.erase(it);
+                return;
+            } else {
+                spdlog::debug("[{}] File {} is clean (scan time: {} ms)",
+                    remote_endpoint_, chunk.file_id(), scan_result.scan_time.count());
+            }
+        }
+        
         // TODO: Calculate full file checksum
         std::vector<uint8_t> checksum;
         file_store.markComplete(chunk.file_id(), checksum);

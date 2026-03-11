@@ -6,6 +6,7 @@
 #include "db/offline_store.hpp"
 #include "db/file_store.hpp"
 #include "commands/command_handler.hpp"
+#include "voice/voice_room_manager.hpp"
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/strand.hpp>
@@ -51,6 +52,7 @@ public:
     db::Database& database() override;
     db::FileStore& file_store() override { return *file_store_; }
     commands::CommandHandler* command_handler() override { return command_handler_.get(); }
+    voice::VoiceRoomManager& voice_room_manager() override { return *voice_room_mgr_; }
     
     // Set file store reference
     void set_file_store(db::FileStore& file_store) { file_store_ = &file_store; }
@@ -92,6 +94,9 @@ private:
 
     // Command handler
     std::unique_ptr<commands::CommandHandler> command_handler_;
+
+    // Voice room manager
+    std::unique_ptr<voice::VoiceRoomManager> voice_room_mgr_;
 
     // Active sessions
     std::unordered_map<std::string, std::shared_ptr<Session>> sessions_by_user_;

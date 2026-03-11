@@ -26,6 +26,32 @@ public:
 
     std::optional<User> find_by_id(const std::string& user_id);
     void insert(const User& user);
+    
+    // Password authentication
+    /**
+     * Set password for a user (hashed with Argon2id).
+     * @return true if successful
+     */
+    bool set_password(const std::string& user_id, const std::string& password);
+    
+    /**
+     * Verify password for a user.
+     * @return true if password is correct
+     */
+    bool verify_password(const std::string& user_id, const std::string& password);
+    
+    /**
+     * Update password (requires old password verification).
+     * @return true if old password was correct and new password was set
+     */
+    bool update_password(const std::string& user_id, 
+                         const std::string& old_password,
+                         const std::string& new_password);
+    
+    /**
+     * Check if user has a password set.
+     */
+    bool has_password(const std::string& user_id);
 
     void upsert_signed_prekey(const std::string& user_id,
                                const std::vector<uint8_t>& spk_pub,

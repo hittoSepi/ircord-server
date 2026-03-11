@@ -16,9 +16,10 @@ Database::Database(const std::string& path)
 void Database::execute_schema() {
     db_.exec(
         "CREATE TABLE IF NOT EXISTS users ("
-        "  user_id      TEXT PRIMARY KEY,"
-        "  identity_pub BLOB NOT NULL,"
-        "  created_at   INTEGER NOT NULL"
+        "  user_id       TEXT PRIMARY KEY,"
+        "  identity_pub  BLOB NOT NULL,"
+        "  password_hash BLOB,"           // Argon2id hash (NULL if password auth not used)
+        "  created_at    INTEGER NOT NULL"
         ")"
     );
 

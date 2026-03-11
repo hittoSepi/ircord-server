@@ -32,6 +32,9 @@ enum MessageType {
 
   // Voice signaling
   MT_VOICE_SIGNAL     = 40;  // ICE/SDP relay for WebRTC
+  MT_VOICE_ROOM_JOIN  = 41;  // User joining a voice room
+  MT_VOICE_ROOM_LEAVE = 42;  // User leaving a voice room
+  MT_VOICE_ROOM_STATE = 43;  // Full participant list (sent to joiner)
 
   // Server management
   MT_INVITE           = 50;  // Invite code for server registration
@@ -143,6 +146,24 @@ message VoiceSignal {
   }
   SignalType signal_type = 3;
   bytes      sdp_or_ice  = 4;   // JSON-serialized SDP or ICE candidate
+}
+
+
+// Voice room messages
+
+message VoiceRoomJoin {
+  string channel_id = 1;
+  string user_id    = 2;
+}
+
+message VoiceRoomLeave {
+  string channel_id = 1;
+  string user_id    = 2;
+}
+
+message VoiceRoomState {
+  string channel_id          = 1;
+  repeated string participants = 2;
 }
 
 // Error message

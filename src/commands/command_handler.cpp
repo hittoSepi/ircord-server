@@ -644,13 +644,29 @@ CommandResponse CommandHandler::cmd_password(const std::vector<std::string>& arg
     if (new_pass.length() < 8) {
         return make_response(false, "New password must be at least 8 characters", "password");
     }
-
-    // TODO: Verify old password and update in database
-    // This requires the UserStore to have a verify_password and update_password method
-    // For now, we return a placeholder response
     
-    spdlog::info("Password change requested for {}", user_id);
-    return make_response(true, "Password updated successfully", "password");
+    // Validate password complexity (optional but recommended)
+    bool has_upper = false, has_lower = false, has_digit = false;
+    for (char c : new_pass) {
+        if (std::isupper(c)) has_upper = true;
+        if (std::islower(c)) has_lower = true;
+        if (std::isdigit(c)) has_digit = true;
+    }
+    
+    if (!has_upper || !has_lower || !has_digit) {
+        return make_response(false, 
+            "Password must contain at least one uppercase letter, one lowercase letter, and one digit", 
+            "password");
+    }
+
+    // Update password in database
+    if (db_.update_password(user_id, old_pass, new_pass)) {
+        spdlog::info("Password changed successfully for user {}", user_id);
+        return make_response(true, "Password updated successfully", "password");
+    } else {
+        spdlog::warn("Password change failed for user {}: old password incorrect", user_id);
+        return make_response(false, "Old password is incorrect", "password");
+    }
 }
 
 // ============================================================================

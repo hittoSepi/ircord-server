@@ -50,6 +50,8 @@ set(SERVER_SRC
     src/db/file_store.cpp
     src/channel/channel_manager.cpp
     src/commands/command_handler.cpp
+    src/crypto/file_encryptor.cpp
+    src/security/virus_scanner.cpp
     ${PROTO_SRCS}
 )
 
@@ -67,6 +69,8 @@ set(SERVER_HDRS
     src/db/file_store.hpp
     src/channel/channel_manager.hpp
     src/commands/command_handler.hpp
+    src/crypto/file_encryptor.hpp
+    src/security/virus_scanner.hpp
     ${PROTO_HDRS}
 )
 

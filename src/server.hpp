@@ -6,6 +6,7 @@
 #include "db/user_store.hpp"
 #include "db/offline_store.hpp"
 #include "db/file_store.hpp"
+#include "security/virus_scanner.hpp"
 
 #include <atomic>
 #include <boost/asio/executor_work_guard.hpp>

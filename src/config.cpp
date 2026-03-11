@@ -101,6 +101,21 @@ namespace ircord {
 			config.ban_duration_min   = get_optional<int>( limits, "ban_duration_min", 30 );
 		}
 
+		// [security] section - optional
+		if ( data.contains( "security" ) ) {
+			const auto &security = data.at( "security" );
+			config.file_encryption_key = get_optional<std::string>( security, "file_encryption_key", "" );
+		}
+
+		// [antivirus] section - optional
+		if ( data.contains( "antivirus" ) ) {
+			const auto &av = data.at( "antivirus" );
+			config.clamav_socket = get_optional<std::string>( av, "clamav_socket", "" );
+			config.clamav_host = get_optional<std::string>( av, "clamav_host", "127.0.0.1" );
+			config.clamav_port = static_cast<uint16_t>(
+				get_optional<int64_t>( av, "clamav_port", 0 ) );
+		}
+
 		return config;
 	}
 

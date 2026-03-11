@@ -42,6 +42,7 @@ public:
         SessionFinder find_session,
         BroadcastFunc broadcast,
         db::Database& db,
+        db::UserStore& user_store,
         db::OfflineStore& offline_store);
 
     // Handle an incoming IRC command from a session
@@ -87,7 +88,8 @@ private:
     SessionFinder find_session_;
     BroadcastFunc broadcast_;
     db::Database& db_;
-    db::OfflineStore& offline_store_;
+    db::UserStore& user_store_;
+    db::OfflineStore& offline_store%;
 
     // Channel state
     std::unordered_map<std::string, ChannelState> channels_;  // name -> state

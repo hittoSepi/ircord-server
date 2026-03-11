@@ -9,7 +9,7 @@ FileStore::FileStore(Database& db)
     // Create tables if not exist
     std::lock_guard<std::mutex> lock(db_.mutex());
     
-    // Files table
+    // Files table (with encryption support)
     db_.get().exec(R"(
         CREATE TABLE IF NOT EXISTS files (
             file_id TEXT PRIMARY KEY,
@@ -23,7 +23,9 @@ FileStore::FileStore(Database& db)
             expires_at INTEGER NOT NULL,
             file_checksum BLOB,
             storage_path TEXT NOT NULL,
-            is_complete INTEGER NOT NULL DEFAULT 0
+            is_complete INTEGER NOT NULL DEFAULT 0,
+            is_encrypted INTEGER NOT NULL DEFAULT 0,
+            encrypted_key BLOB
         )
     )");
 
@@ -364,6 +366,134 @@ FileStore::Stats FileStore::getStats() {
     }
     
     return stats;
+}
+
+void FileStore::init_encryption(const std::string& master_key_hex) {
+    encryptor_ = std::make_unique<crypto::FileEncryptor>(master_key_hex);
+    if (encryptor_->is_ready()) {
+        spdlog::info("FileStore: Encryption enabled");
+    } else {
+        spdlog::warn("FileStore: Failed to initialize encryption");
+        encryptor_.reset();
+    }
+}
+
+bool FileStore::encryption_enabled() const {
+    return encryptor_ != nullptr && encryptor_->is_ready();
+}
+
+std::optional<std::vector<uint8_t>> FileStore::maybe_encrypt(
+    const std::vector<uint8_t>& data,
+    std::vector<uint8_t>& out_encrypted_key) {
+    
+    if (!encryption_enabled()) {
+        return data;  // Return unencrypted if encryption not available
+    }
+    
+    crypto::FileEncryptor::EncryptedKey enc_key;
+    auto result = encryptor_->encrypt(data, enc_key);
+    if (result) {
+        out_encrypted_key = crypto::FileEncryptor::serialize_encrypted_key(enc_key);
+    }
+    return result;
+}
+
+std::optional<std::vector<uint8_t>> FileStore::maybe_decrypt(
+    const std::vector<uint8_t>& data,
+    const std::vector<uint8_t>& encrypted_key) {
+    
+    if (!encryption_enabled() || encrypted_key.empty()) {
+        return data;  // Return as-is if not encrypted
+    }
+    
+    auto enc_key = crypto::FileEncryptor::deserialize_encrypted_key(encrypted_key);
+    if (!enc_key) {
+        spdlog::error("FileStore: Failed to deserialize encrypted key");
+        return std::nullopt;
+    }
+    
+    return encryptor_->decrypt(data, *enc_key);
+}
+
+bool FileStore::encryptAndStoreChunk(
+    const std::string& file_id,
+    const std::vector<uint8_t>& plaintext) {
+    
+    if (!encryption_enabled()) {
+        spdlog::warn("FileStore: Encryption not enabled, storing unencrypted");
+        return storeChunk(file_id, 0, plaintext);
+    }
+    
+    std::vector<uint8_t> encrypted_key;
+    auto encrypted = maybe_encrypt(plaintext, encrypted_key);
+    if (!encrypted) {
+        return false;
+    }
+    
+    // Store encrypted chunk
+    if (!storeChunk(file_id, 0, *encrypted)) {
+        return false;
+    }
+    
+    // Update file metadata with encryption info
+    std::lock_guard<std::mutex> lock(db_.mutex());
+    try {
+        SQLite::Statement update(db_.get(), R"(
+            UPDATE files SET is_encrypted = 1, encrypted_key = ?
+            WHERE file_id = ?
+        )");
+        update.bind(1, encrypted_key.data(), static_cast<int>(encrypted_key.size()));
+        update.bind(2, file_id);
+        update.exec();
+        
+        spdlog::debug("FileStore: Encrypted and stored chunk for {}", file_id);
+        return true;
+    } catch (const SQLite::Exception& e) {
+        spdlog::error("FileStore::encryptAndStoreChunk failed: {}", e.what());
+        return false;
+    }
+}
+
+std::optional<std::vector<uint8_t>> FileStore::decryptAndGetChunk(
+    const std::string& file_id) {
+    
+    // Get encrypted chunk and key
+    auto encrypted = getChunk(file_id, 0);
+    if (!encrypted) {
+        return std::nullopt;
+    }
+    
+    std::lock_guard<std::mutex> lock(db_.mutex());
+    
+    try {
+        SQLite::Statement query(db_.get(),
+            "SELECT is_encrypted, encrypted_key FROM files WHERE file_id = ?");
+        query.bind(1, file_id);
+        
+        if (!query.executeStep()) {
+            return std::nullopt;
+        }
+        
+        bool is_encrypted = query.getColumn(0).getInt() != 0;
+        if (!is_encrypted) {
+            return encrypted;  // Return unencrypted data
+        }
+        
+        auto key_blob = query.getColumn(1);
+        if (key_blob.isNull()) {
+            spdlog::error("FileStore: Encrypted file missing key");
+            return std::nullopt;
+        }
+        
+        const uint8_t* key_data = reinterpret_cast<const uint8_t*>(key_blob.getBlob());
+        std::vector<uint8_t> encrypted_key(key_data, key_data + key_blob.getBytes());
+        
+        return maybe_decrypt(*encrypted, encrypted_key);
+        
+    } catch (const SQLite::Exception& e) {
+        spdlog::error("FileStore::decryptAndGetChunk failed: {}", e.what());
+        return std::nullopt;
+    }
 }
 
 } // namespace ircord::db

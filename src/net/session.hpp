@@ -20,6 +20,7 @@
 // Forward declarations for db types (avoid pulling heavy headers into every TU)
 namespace ircord::db { class UserStore; class OfflineStore; class Database; class FileStore; }
 namespace ircord::commands { class CommandHandler; }
+namespace ircord::voice { class VoiceRoomManager; }
 
 namespace ircord::net {
 
@@ -84,6 +85,8 @@ private:
     void handle_key_upload(const KeyUpload& ku);
     void handle_key_request(const KeyRequest& kr);
     void handle_voice_signal(const VoiceSignal& vs, const Envelope& raw);
+    void handle_voice_room_join(const VoiceRoomJoin& join);
+    void handle_voice_room_leave(const VoiceRoomLeave& leave);
     void handle_command(const IrcCommand& cmd);
     void handle_file_request(const FileUploadRequest& req, const Envelope& raw);
     void handle_file_upload(const FileUploadChunk& chunk, const Envelope& raw);
@@ -175,6 +178,9 @@ public:
 
     // Command handler for IRC commands
     virtual commands::CommandHandler* command_handler() = 0;
+
+    // Voice room manager
+    virtual voice::VoiceRoomManager& voice_room_manager() = 0;
 
     // Get current config values
     virtual int ping_interval_sec() const = 0;

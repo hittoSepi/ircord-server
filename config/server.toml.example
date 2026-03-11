@@ -59,3 +59,25 @@ abuse_window_min = 10
 
 # Ban duration for repeat offenders (minutes)
 ban_duration_min = 30
+
+[security]
+# Master key for file encryption at rest (64 hex characters = 32 bytes)
+# Generate a key with: openssl rand -hex 32
+# Leave empty to disable file encryption (files stored unencrypted - NOT RECOMMENDED)
+file_encryption_key = ""
+
+[antivirus]
+# ClamAV daemon (clamd) configuration for virus scanning
+# Install ClamAV: apt-get install clamav-daemon (Debian/Ubuntu)
+# 
+# Option 1: Unix socket (Linux/macOS only, faster)
+# clamav_socket = "/var/run/clamav/clamd.ctl"
+#
+# Option 2: TCP socket (cross-platform)
+# clamav_host = "127.0.0.1"
+# clamav_port = 3310
+#
+# Leave empty/disabled to skip virus scanning
+clamav_socket = ""
+clamav_host = "127.0.0.1"
+clamav_port = 0

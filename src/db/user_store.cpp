@@ -1,6 +1,7 @@
 #include "user_store.hpp"
 
 #include <spdlog/spdlog.h>
+#include <sodium.h>
 
 #include <chrono>
 #include <stdexcept>
@@ -122,6 +123,120 @@ std::vector<uint8_t> UserStore::consume_opk(const std::string& user_id) {
     } catch (const SQLite::Exception& e) {
         spdlog::error("UserStore::consume_opk failed: {}", e.what());
         return {};
+    }
+}
+
+// ============================================================================
+// Password Authentication (Argon2id via libsodium)
+// ============================================================================
+
+bool UserStore::set_password(const std::string& user_id, const std::string& password) {
+    std::lock_guard<std::mutex> lock(db_.mutex());
+    
+    try {
+        // Generate random salt
+        std::vector<uint8_t> salt(crypto_pwhash_SALTBYTES);
+        randombytes_buf(salt.data(), salt.size());
+        
+        // Hash password with Argon2id
+        std::vector<uint8_t> hash(crypto_pwhash_STRBYTES);
+        
+        if (crypto_pwhash_str(
+                reinterpret_cast<char*>(hash.data()),
+                password.c_str(),
+                password.length(),
+                crypto_pwhash_OPSLIMIT_INTERACTIVE,
+                crypto_pwhash_MEMLIMIT_INTERACTIVE) != 0) {
+            spdlog::error("UserStore::set_password: crypto_pwhash_str failed (out of memory)");
+            return false;
+        }
+        
+        // Store hash in database
+        SQLite::Statement q(db_.get(),
+            "UPDATE users SET password_hash = ? WHERE user_id = ?");
+        q.bind(1, hash.data(), static_cast<int>(hash.size()));
+        q.bind(2, user_id);
+        q.exec();
+        
+        spdlog::info("UserStore: password set for user {}", user_id);
+        return true;
+        
+    } catch (const SQLite::Exception& e) {
+        spdlog::error("UserStore::set_password failed: {}", e.what());
+        return false;
+    }
+}
+
+bool UserStore::verify_password(const std::string& user_id, const std::string& password) {
+    std::lock_guard<std::mutex> lock(db_.mutex());
+    
+    try {
+        // Get stored hash
+        SQLite::Statement q(db_.get(),
+            "SELECT password_hash FROM users WHERE user_id = ?");
+        q.bind(1, user_id);
+        
+        if (!q.executeStep()) {
+            spdlog::warn("UserStore::verify_password: user {} not found", user_id);
+            return false;
+        }
+        
+        auto blob = q.getColumn(0);
+        if (blob.isNull() || blob.getBytes() == 0) {
+            spdlog::warn("UserStore::verify_password: no password set for user {}", user_id);
+            return false;
+        }
+        
+        const char* stored_hash = reinterpret_cast<const char*>(blob.getBlob());
+        
+        // Verify password
+        int result = crypto_pwhash_str_verify(stored_hash, password.c_str(), password.length());
+        
+        if (result == 0) {
+            spdlog::debug("UserStore: password verified for user {}", user_id);
+            return true;
+        } else {
+            spdlog::warn("UserStore: password verification failed for user {}", user_id);
+            return false;
+        }
+        
+    } catch (const SQLite::Exception& e) {
+        spdlog::error("UserStore::verify_password failed: {}", e.what());
+        return false;
+    }
+}
+
+bool UserStore::update_password(const std::string& user_id,
+                                const std::string& old_password,
+                                const std::string& new_password) {
+    // Verify old password first
+    if (!verify_password(user_id, old_password)) {
+        spdlog::warn("UserStore::update_password: old password incorrect for user {}", user_id);
+        return false;
+    }
+    
+    // Set new password
+    return set_password(user_id, new_password);
+}
+
+bool UserStore::has_password(const std::string& user_id) {
+    std::lock_guard<std::mutex> lock(db_.mutex());
+    
+    try {
+        SQLite::Statement q(db_.get(),
+            "SELECT password_hash FROM users WHERE user_id = ?");
+        q.bind(1, user_id);
+        
+        if (!q.executeStep()) {
+            return false;
+        }
+        
+        auto blob = q.getColumn(0);
+        return !blob.isNull() && blob.getBytes() > 0;
+        
+    } catch (const SQLite::Exception& e) {
+        spdlog::error("UserStore::has_password failed: {}", e.what());
+        return false;
     }
 }
 

@@ -69,6 +69,10 @@ void Listener::run() {
         command_handler_ = std::make_unique<commands::CommandHandler>(
             find_session, broadcast, *db_, offline_store_);
         spdlog::info("Command handler initialized");
+
+        voice_room_mgr_ = std::make_unique<voice::VoiceRoomManager>(
+            [this](const std::string& uid) { return find_session(uid); });
+        spdlog::info("Voice room manager initialized");
     }
 
     // Start accepting connections
@@ -236,6 +240,11 @@ void Listener::on_session_disconnected(std::shared_ptr<Session> session, const s
         presence.set_user_id(disconnected_user_id);
         presence.set_status(PresenceUpdate::OFFLINE);
         broadcast_presence(presence, nullptr);
+
+        // Remove from voice rooms
+        if (voice_room_mgr_) {
+            voice_room_mgr_->on_disconnect(disconnected_user_id);
+        }
     }
 }
 
