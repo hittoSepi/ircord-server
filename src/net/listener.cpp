@@ -67,7 +67,7 @@ void Listener::run() {
             this->broadcast(env, exclude);
         };
         command_handler_ = std::make_unique<commands::CommandHandler>(
-            find_session, broadcast, *db_);
+            find_session, broadcast, *db_, offline_store_);
         spdlog::info("Command handler initialized");
     }
 

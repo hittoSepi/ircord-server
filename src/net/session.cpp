@@ -2,6 +2,7 @@
 #include "config.hpp"
 #include "db/user_store.hpp"
 #include "db/offline_store.hpp"
+#include "db/file_store.hpp"
 #include "commands/command_handler.hpp"
 
 #include <boost/asio/bind_executor.hpp>
@@ -315,6 +316,48 @@ void Session::handle_envelope(const Envelope& env) {
         }
         break;
 
+    case MT_FILE_REQUEST:
+        if (state_ == SessionState::Established) {
+            FileUploadRequest req;
+            if (!env.payload().empty() && req.ParseFromArray(
+                    env.payload().data(), static_cast<int>(env.payload().size()))) {
+                handle_file_request(req, env);
+            } else {
+                send_error(4080, "Invalid FILE_REQUEST");
+            }
+        } else {
+            send_error(4081, "Not authenticated");
+        }
+        break;
+
+    case MT_FILE_UPLOAD:
+        if (state_ == SessionState::Established) {
+            FileUploadChunk chunk;
+            if (!env.payload().empty() && chunk.ParseFromArray(
+                    env.payload().data(), static_cast<int>(env.payload().size()))) {
+                handle_file_upload(chunk, env);
+            } else {
+                send_error(4082, "Invalid FILE_UPLOAD");
+            }
+        } else {
+            send_error(4083, "Not authenticated");
+        }
+        break;
+
+    case MT_FILE_DOWNLOAD:
+        if (state_ == SessionState::Established) {
+            FileDownloadRequest req;
+            if (!env.payload().empty() && req.ParseFromArray(
+                    env.payload().data(), static_cast<int>(env.payload().size()))) {
+                handle_file_download(req);
+            } else {
+                send_error(4086, "Invalid FILE_DOWNLOAD");
+            }
+        } else {
+            send_error(4087, "Not authenticated");
+        }
+        break;
+
     default:
         spdlog::debug("[{}] Unhandled message type: {}", remote_endpoint_,
             static_cast<int>(env.type()));
@@ -510,9 +553,15 @@ void Session::handle_chat(const ChatEnvelope& chat, const Envelope& raw) {
     } else {
         std::vector<uint8_t> payload(raw.ByteSizeLong());
         raw.SerializeToArray(payload.data(), static_cast<int>(payload.size()));
-        server_ctx_.offline_store().save(recipient, payload);
-        spdlog::debug("[{}] Stored CHAT {} -> {} (offline)",
-            remote_endpoint_, user_id_, recipient);
+        bool saved = server_ctx_.offline_store().save(recipient, payload);
+        if (saved) {
+            spdlog::debug("[{}] Stored CHAT {} -> {} (offline)",
+                remote_endpoint_, user_id_, recipient);
+        } else {
+            spdlog::warn("[{}] Failed to store CHAT {} -> {} (queue full)",
+                remote_endpoint_, user_id_, recipient);
+            send_error(4034, "Recipient offline queue full");
+        }
     }
 }
 
@@ -603,6 +652,186 @@ void Session::handle_key_request(const KeyRequest& kr) {
         remote_endpoint_, kr.user_id(), !opk.empty());
 
     send_envelope(MT_KEY_BUNDLE, bundle);
+}
+
+void Session::handle_file_request(const FileUploadRequest& req, const Envelope& raw) {
+    auto& file_store = server_ctx_.file_store();
+    
+    // Validate request
+    if (req.file_size() == 0) {
+        FileError err;
+        err.set_file_id(req.file_id());
+        err.set_error_code(4080);
+        err.set_error_message("File size must be greater than 0");
+        send_envelope(MT_FILE_ERROR, err);
+        return;
+    }
+    
+    // Check per-user file storage limit
+    constexpr uint64_t max_per_user_bytes = 100 * 1024 * 1024; // 100 MB per user
+    if (file_store.getTotalUserBytes(user_id_) + req.file_size() > max_per_user_bytes) {
+        FileError err;
+        err.set_file_id(req.file_id());
+        err.set_error_code(4085);
+        err.set_error_message("Storage quota exceeded");
+        send_envelope(MT_FILE_ERROR, err);
+        return;
+    }
+    
+    // Create file entry
+    FileStore::FileMetadata metadata;
+    metadata.file_id = req.file_id();
+    metadata.filename = req.filename();
+    metadata.file_size = req.file_size();
+    metadata.mime_type = req.mime_type();
+    metadata.owner_id = user_id_;
+    
+    if (!file_store.createFile(metadata)) {
+        FileError err;
+        err.set_file_id(req.file_id());
+        err.set_error_code(4081);
+        err.set_error_message("Failed to create file entry");
+        send_envelope(MT_FILE_ERROR, err);
+        return;
+    }
+    
+    // Initialize upload state
+    {
+        std::lock_guard<std::mutex> lock(uploads_mutex_);
+        UploadState& state = active_uploads_[req.file_id()];
+        state.file_id = req.file_id();
+        state.bytes_received = 0;
+        state.total_bytes = req.file_size();
+        state.start_time = std::chrono::steady_clock::now();
+    }
+    
+    // Send acknowledgement
+    FileResponse response;
+    response.set_file_id(req.file_id());
+    response.set_chunk_size(64 * 1024);  // 64 KB chunks
+    send_envelope(MT_FILE_RESPONSE, response);
+    
+    spdlog::info("[{}] File upload started: {} ({} bytes, {})",
+        remote_endpoint_, req.file_id(), req.file_size(), req.filename());
+}
+
+void Session::handle_file_upload(const FileUploadChunk& chunk, const Envelope& raw) {
+    auto& file_store = server_ctx_.file_store();
+    
+    // Check rate limit
+    if (msg_rate_limiter_ && !msg_rate_limiter_->allow()) {
+        FileError err;
+        err.set_file_id(chunk.file_id());
+        err.set_error_code(4290);
+        err.set_error_message("Rate limit exceeded");
+        send_envelope(MT_FILE_ERROR, err);
+        return;
+    }
+    
+    std::lock_guard<std::mutex> lock(uploads_mutex_);
+    
+    // Get or create upload state
+    auto& upload = active_uploads_[chunk.file_id()];
+    
+    // Store the chunk
+    std::vector<uint8_t> data(chunk.data().begin(), chunk.data().end());
+    if (!file_store.storeChunk(chunk.file_id(), chunk.chunk_index(), data)) {
+        FileError err;
+        err.set_file_id(chunk.file_id());
+        err.set_error_code(4082);
+        err.set_error_message("Failed to store chunk");
+        send_envelope(MT_FILE_ERROR, err);
+        return;
+    }
+    
+    // Update state
+    upload.bytes_received += data.size();
+    
+    // Send progress update
+    auto metadata = file_store.getFile(chunk.file_id());
+    if (metadata) {
+        FileProgress progress;
+        progress.set_file_id(chunk.file_id());
+        progress.set_bytes_transferred(upload.bytes_received);
+        progress.set_total_bytes(metadata->file_size);
+        progress.set_percent_complete(
+            static_cast<float>(upload.bytes_received) / metadata->file_size * 100.0f);
+        progress.set_status("uploading");
+        send_envelope(MT_FILE_PROGRESS, progress);
+    }
+    
+    // If last chunk, mark complete
+    if (chunk.is_last()) {
+        // Calculate checksum
+        // TODO: Implement full file checksum verification
+        std::vector<uint8_t> checksum; // placeholder
+        file_store.markComplete(chunk.file_id(), checksum);
+        
+        // Notify completion
+        FileComplete complete;
+        complete.set_file_id(chunk.file_id());
+        complete.set_total_bytes(upload.bytes_received);
+        send_envelope(MT_FILE_COMPLETE, complete);
+        
+        // Clean up upload state
+        active_uploads_.erase(chunk.file_id());
+        
+        spdlog::info("[{}] File upload complete: {} ({} bytes)",
+            remote_endpoint_, chunk.file_id(), upload.bytes_received);
+    }
+}
+
+void Session::handle_file_download(const FileDownloadRequest& req) {
+    auto& file_store = server_ctx_.file_store();
+    
+    // Get file metadata
+    auto metadata = file_store.getFile(req.file_id());
+    if (!metadata) {
+        FileError err;
+        err.set_file_id(req.file_id());
+        err.set_error_code(4083);
+        err.set_error_message("File not found");
+        send_envelope(MT_FILE_ERROR, err);
+        return;
+    }
+    
+    // Calculate chunk size and total chunks
+    constexpr size_t chunk_size = 64 * 1024;  // 64 KB chunks
+    size_t total_chunks = (metadata->file_size + chunk_size - 1) / chunk_size;
+    
+    // Send chunks starting from requested index
+    for (size_t i = req.chunk_index(); i < total_chunks; ++i) {
+        auto chunk_data = file_store.getChunk(req.file_id(), static_cast<uint32_t>(i));
+        if (!chunk_data) {
+            FileError err;
+            err.set_file_id(req.file_id());
+            err.set_error_code(4084);
+            err.set_error_message("Chunk not found: " + std::to_string(i));
+            send_envelope(MT_FILE_ERROR, err);
+            return;
+        }
+        
+        FileChunk chunk;
+        chunk.set_file_id(req.file_id());
+        chunk.set_chunk_index(static_cast<uint32_t>(i));
+        chunk.set_data(chunk_data->data(), chunk_data->size());
+        chunk.set_is_last(i == total_chunks - 1);
+        
+        send_envelope(MT_FILE_CHUNK, chunk);
+        
+        // Send progress update
+        FileProgress progress;
+        progress.set_file_id(req.file_id());
+        progress.set_bytes_transferred((i + 1) * chunk_size);
+        progress.set_total_bytes(metadata->file_size);
+        progress.set_percent_complete(
+            static_cast<float>((i + 1) * chunk_size) / metadata->file_size * 100.0f);
+        progress.set_status("downloading");
+        send_envelope(MT_FILE_PROGRESS, progress);
+    }
+    
+    spdlog::info("[{}] File download started: {} ({} chunks)",
+        remote_endpoint_, req.file_id(), total_chunks);
 }
 
 void Session::send(const Envelope& env) {

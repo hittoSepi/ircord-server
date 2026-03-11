@@ -108,6 +108,11 @@ struct ServerConfig {
     int ping_timeout_sec = 60;
     int msg_rate_per_sec = 20;               // max messages/sec per authenticated user
     int conn_rate_per_min = 10;              // max connection attempts/min per IP
+    int commands_per_min = 30;               // max commands/min per user
+    int joins_per_min = 5;                   // max channel joins/min per user
+    int abuse_threshold = 5;                 // violations before ban
+    int abuse_window_min = 10;               // violation window in minutes
+    int ban_duration_min = 30;               // ban duration in minutes
 };
 
 class ConfigLoader {

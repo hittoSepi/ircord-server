@@ -42,3 +42,20 @@ msg_rate_per_sec = 20
 
 # Maximum connection attempts per minute per IP address
 conn_rate_per_min = 10
+
+# Command rate limiting
+# Maximum commands per minute per user (includes all /commands)
+commands_per_min = 30
+
+# Maximum channel joins per minute per user
+joins_per_min = 5
+
+# Abuse detection
+# Number of rate limit violations before auto-ban
+abuse_threshold = 5
+
+# Time window for counting violations (minutes)
+abuse_window_min = 10
+
+# Ban duration for repeat offenders (minutes)
+ban_duration_min = 30

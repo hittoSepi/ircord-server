@@ -94,6 +94,11 @@ namespace ircord {
 			config.ping_timeout_sec   = get_optional<int>( limits, "ping_timeout_sec", 60 );
 			config.msg_rate_per_sec   = get_optional<int>( limits, "msg_rate_per_sec", 20 );
 			config.conn_rate_per_min  = get_optional<int>( limits, "conn_rate_per_min", 10 );
+			config.commands_per_min   = get_optional<int>( limits, "commands_per_min", 30 );
+			config.joins_per_min      = get_optional<int>( limits, "joins_per_min", 5 );
+			config.abuse_threshold    = get_optional<int>( limits, "abuse_threshold", 5 );
+			config.abuse_window_min   = get_optional<int>( limits, "abuse_window_min", 10 );
+			config.ban_duration_min   = get_optional<int>( limits, "ban_duration_min", 30 );
 		}
 
 		return config;

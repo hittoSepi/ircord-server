@@ -10,12 +10,15 @@
 #include <vector>
 #include <string>
 #include <atomic>
+#include <chrono>
+#include <unordered_map>
+#include <mutex>
 
 #include "ircord.pb.h"
 #include "net/rate_limiter.hpp"
 
 // Forward declarations for db types (avoid pulling heavy headers into every TU)
-namespace ircord::db { class UserStore; class OfflineStore; class Database; }
+namespace ircord::db { class UserStore; class OfflineStore; class Database; class FileStore; }
 namespace ircord::commands { class CommandHandler; }
 
 namespace ircord::net {
@@ -82,6 +85,18 @@ private:
     void handle_key_request(const KeyRequest& kr);
     void handle_voice_signal(const VoiceSignal& vs, const Envelope& raw);
     void handle_command(const IrcCommand& cmd);
+    void handle_file_request(const FileUploadRequest& req, const Envelope& raw);
+    void handle_file_upload(const FileUploadChunk& chunk, const Envelope& raw);
+    void handle_file_download(const FileDownloadRequest& req);
+    
+    struct UploadState {
+        std::string file_id;
+        uint64_t bytes_received{0};
+        uint64_t total_bytes{0};
+        std::chrono::steady_clock::time_point start_time;
+    };
+    std::unordered_map<std::string, UploadState> active_uploads_;
+    std::mutex uploads_mutex_;
 
     // Send helpers
     void send_envelope(MessageType type, const google::protobuf::Message& msg);
@@ -124,6 +139,18 @@ private:
     // Per-session message rate limiter (initialised after auth)
     std::optional<RateLimiter> msg_rate_limiter_;
 
+    // File upload state
+    struct FileUploadState {
+        std::string file_id;
+        uint64_t file_size = 0;
+        uint32_t chunk_size = 65536;
+        uint32_t total_chunks = 0;
+        std::vector<bool> received_chunks;
+        uint64_t bytes_received = 0;
+    };
+    std::unordered_map<std::string, FileUploadState> active_uploads_;
+    std::mutex uploads_mutex_;
+
     // Protocol version
     static constexpr uint32_t kProtocolVersion = 1;
 };
@@ -153,6 +180,7 @@ public:
     virtual db::UserStore& user_store() = 0;
     virtual db::OfflineStore& offline_store() = 0;
     virtual db::Database& database() = 0;
+    virtual db::FileStore& file_store() = 0;
 
     // Command handler for IRC commands
     virtual commands::CommandHandler* command_handler() = 0;
