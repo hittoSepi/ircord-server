@@ -40,6 +40,12 @@ enum MessageType {
   MT_PING             = 90;
   MT_PONG             = 91;
 
+  // IRC Commands
+  MT_COMMAND          = 60;   // Client → Server: IRC-style command
+  MT_COMMAND_RESPONSE = 61;   // Server → Client: Command result
+  MT_NICK_CHANGE      = 62;   // Server → Client: Nick change notification
+  MT_USER_INFO        = 63;   // Server → Client: WHOIS response
+
   // Errors
   MT_ERROR            = 99;
 }
@@ -139,3 +145,29 @@ message Error {
 message Empty {
   // No fields - just indicates success
 }
+
+// IRC Command messages
+
+message IrcCommand {
+  string command = 1;    // Command name without leading /
+  repeated string args = 2;  // Command arguments
+}
+
+message CommandResponse {
+  bool success = 1;
+  string message = 2;    // Human-readable response
+  string command = 3;    // Echo back the command
+}
+
+message NickChange {
+  string old_nick = 1;
+  string new_nick = 2;
+}
+
+message UserInfo {
+  string user_id = 1;
+  string nickname = 2;
+  bool is_online = 3;
+  repeated string channels = 4;  // Channels user is in
+  string identity_fingerprint = 5;
+}}
