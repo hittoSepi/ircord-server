@@ -240,6 +240,8 @@ void Session::handle_envelope(const Envelope& env) {
         break;
 
     case MT_CHAT_ENVELOPE:
+        spdlog::debug("[{}] MT_CHAT_ENVELOPE received, state={}, user_id={}",
+            remote_endpoint_, static_cast<int>(state_), user_id_);
         if (state_ == SessionState::Established) {
             if (msg_rate_limiter_ && !msg_rate_limiter_->allow()) {
                 send_error(4290, "Rate limit exceeded");
@@ -249,11 +251,15 @@ void Session::handle_envelope(const Envelope& env) {
             ChatEnvelope chat;
             if (!env.payload().empty() && chat.ParseFromArray(
                     env.payload().data(), static_cast<int>(env.payload().size()))) {
+                spdlog::debug("[{}] Parsed ChatEnvelope, calling handle_chat", remote_endpoint_);
                 handle_chat(chat, env);
             } else {
+                spdlog::warn("[{}] Failed to parse ChatEnvelope", remote_endpoint_);
                 send_error(4030, "Invalid CHAT_ENVELOPE");
             }
         } else {
+            spdlog::warn("[{}] CHAT_ENVELOPE rejected: not authenticated (state={})",
+                remote_endpoint_, static_cast<int>(state_));
             send_error(4031, "Not authenticated");
         }
         break;
