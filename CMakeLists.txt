@@ -52,6 +52,7 @@ set(SERVER_SRC
     src/commands/command_handler.cpp
     src/crypto/file_encryptor.cpp
     src/security/virus_scanner.cpp
+    src/voice/voice_room_manager.cpp
     ${PROTO_SRCS}
 )
 
@@ -71,6 +72,7 @@ set(SERVER_HDRS
     src/commands/command_handler.hpp
     src/crypto/file_encryptor.hpp
     src/security/virus_scanner.hpp
+    src/voice/voice_room_manager.hpp
     ${PROTO_HDRS}
 )
 

@@ -1,6 +1,7 @@
 #include "commands/command_handler.hpp"
 #include "net/session.hpp"
 #include "db/database.hpp"
+#include "db/user_store.hpp"
 #include "db/offline_store.hpp"
 #include <spdlog/spdlog.h>
 #include <algorithm>
@@ -20,10 +21,12 @@ CommandHandler::CommandHandler(
     SessionFinder find_session,
     BroadcastFunc broadcast,
     db::Database& db,
+    db::UserStore& user_store,
     db::OfflineStore& offline_store)
     : find_session_(std::move(find_session))
     , broadcast_(std::move(broadcast))
     , db_(db)
+    , user_store_(user_store)
     , offline_store_(offline_store)
 {
     // Register commands
@@ -45,6 +48,7 @@ CommandHandler::CommandHandler(
     command_map_["quit"] = [this](auto& args, auto s) { return cmd_quit(args, s); };
     command_map_["msg"] = [this](auto& args, auto s) { return cmd_msg(args, s); };
     command_map_["query"] = [this](auto& args, auto s) { return cmd_msg(args, s); };
+    command_map_["resetdb"] = [this](auto& args, auto s) { return cmd_resetdb(args, s); };
 }
 
 CommandResponse CommandHandler::handle_command(const IrcCommand& cmd, SessionPtr session) {
@@ -660,7 +664,7 @@ CommandResponse CommandHandler::cmd_password(const std::vector<std::string>& arg
     }
 
     // Update password in database
-    if (db_.update_password(user_id, old_pass, new_pass)) {
+    if (user_store_.update_password(user_id, old_pass, new_pass)) {
         spdlog::info("Password changed successfully for user {}", user_id);
         return make_response(true, "Password updated successfully", "password");
     } else {
@@ -819,6 +823,40 @@ void CommandHandler::cleanup_old_abuse_records() {
         } else {
             ++it;
         }
+    }
+}
+
+// ============================================================================
+// /resetdb - Admin command to clear all user data (for testing)
+// ============================================================================
+CommandResponse CommandHandler::cmd_resetdb(const std::vector<std::string>& args, SessionPtr session) {
+    (void)args; // Unused
+    
+    const std::string& user_id = session->user_id();
+    
+    // Only allow the first user (server owner) or a hardcoded admin to reset
+    // In production, you'd want proper admin roles
+    static const std::string admin_user = "admin";  // Change this to your admin username
+    
+    if (user_id != admin_user) {
+        spdlog::warn("User {} attempted to reset database without permission", user_id);
+        return make_response(false, "Permission denied: only admin can reset database", "resetdb");
+    }
+    
+    try {
+        std::lock_guard<std::mutex> lock(db_.mutex());
+        
+        // Clear all tables
+        db_.get().exec("DELETE FROM users");
+        db_.get().exec("DELETE FROM signed_prekeys");
+        db_.get().exec("DELETE FROM one_time_prekeys");
+        db_.get().exec("DELETE FROM offline_messages");
+        
+        spdlog::warn("Database reset by admin user: {}", user_id);
+        return make_response(true, "Database cleared successfully. All users and keys removed.", "resetdb");
+    } catch (const SQLite::Exception& e) {
+        spdlog::error("Failed to reset database: {}", e.what());
+        return make_response(false, "Database error: " + std::string(e.what()), "resetdb");
     }
 }
 

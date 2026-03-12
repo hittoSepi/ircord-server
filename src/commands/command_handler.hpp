@@ -2,6 +2,7 @@
 
 #include "ircord.pb.h"
 #include "net/rate_limiter.hpp"
+#include "db/user_store.hpp"
 #include <memory>
 #include <string>
 #include <functional>
@@ -78,6 +79,7 @@ private:
     CommandResponse cmd_password(const std::vector<std::string>& args, SessionPtr session);
     CommandResponse cmd_quit(const std::vector<std::string>& args, SessionPtr session);
     CommandResponse cmd_msg(const std::vector<std::string>& args, SessionPtr session);
+    CommandResponse cmd_resetdb(const std::vector<std::string>& args, SessionPtr session);
 
     // Helper functions
     ChannelState& get_or_create_channel(const std::string& name);
@@ -89,7 +91,7 @@ private:
     BroadcastFunc broadcast_;
     db::Database& db_;
     db::UserStore& user_store_;
-    db::OfflineStore& offline_store%;
+    db::OfflineStore& offline_store_;
 
     // Channel state
     std::unordered_map<std::string, ChannelState> channels_;  // name -> state

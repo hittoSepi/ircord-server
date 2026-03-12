@@ -67,11 +67,11 @@ void Listener::run() {
             this->broadcast(env, exclude);
         };
         command_handler_ = std::make_unique<commands::CommandHandler>(
-            find_session, broadcast, *db_, offline_store_);
+            find_session, broadcast, *db_, user_store_, offline_store_);
         spdlog::info("Command handler initialized");
 
         voice_room_mgr_ = std::make_unique<voice::VoiceRoomManager>(
-            [this](const std::string& uid) { return find_session(uid); });
+            [this](const std::string& uid) { return this->find_session(uid); });
         spdlog::info("Voice room manager initialized");
     }
 

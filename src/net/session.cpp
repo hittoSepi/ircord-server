@@ -5,6 +5,7 @@
 #include "db/file_store.hpp"
 #include "commands/command_handler.hpp"
 #include "security/virus_scanner.hpp"
+#include "voice/voice_room_manager.hpp"
 
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/read.hpp>
