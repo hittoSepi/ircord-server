@@ -253,19 +253,24 @@ void Listener::broadcast(const Envelope& env, std::shared_ptr<Session> exclude) 
 
     {
         std::lock_guard<std::mutex> lock(sessions_mutex_);
+        spdlog::debug("Broadcast: {} authenticated sessions in map", sessions_by_user_.size());
         sessions.reserve(sessions_by_user_.size());
         for (auto& [user_id, session] : sessions_by_user_) {
             if (session != exclude) {
                 sessions.push_back(session);
+                spdlog::debug("Broadcast: including user {}", user_id);
+            } else {
+                spdlog::debug("Broadcast: excluding sender {}", user_id);
             }
         }
     }
 
+    spdlog::info("Broadcasting message type {} to {} sessions", 
+        static_cast<int>(env.type()), sessions.size());
+
     for (auto& session : sessions) {
         session->send(env);
     }
-
-    spdlog::debug("Broadcast to {} sessions", sessions.size());
 }
 
 std::shared_ptr<Session> Listener::find_session(const std::string& user_id) {

@@ -545,6 +545,9 @@ void Session::handle_ping(const Envelope& env) {
 }
 
 void Session::handle_chat(const ChatEnvelope& chat, const Envelope& raw) {
+    spdlog::info("[{}] handle_chat: sender={}, claimed={}, user_id_={}",
+        remote_endpoint_, chat.sender_id(), chat.sender_id(), user_id_);
+    
     // Reject sender spoofing
     if (chat.sender_id() != user_id_) {
         spdlog::warn("[{}] sender_id mismatch: claimed={}, actual={}",
@@ -560,12 +563,14 @@ void Session::handle_chat(const ChatEnvelope& chat, const Envelope& raw) {
     }
 
     const std::string& recipient = chat.recipient_id();
+    spdlog::info("[{}] handle_chat: recipient={}, is_channel={}",
+        remote_endpoint_, recipient, (!recipient.empty() && recipient[0] == '#'));
 
     // Channel fanout: broadcast to all authenticated sessions except sender
     if (!recipient.empty() && recipient[0] == '#') {
-        server_ctx_.broadcast(raw, shared_from_this());
-        spdlog::debug("[{}] Broadcast CHAT from {} to channel {}",
+        spdlog::info("[{}] Broadcasting CHAT from {} to channel {}",
             remote_endpoint_, user_id_, recipient);
+        server_ctx_.broadcast(raw, shared_from_this());
         return;
     }
 
