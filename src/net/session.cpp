@@ -183,8 +183,8 @@ void Session::on_frame_received(std::vector<uint8_t> data) {
             return;
         }
 
-        spdlog::trace("[{}] Received envelope type={}", remote_endpoint_,
-            static_cast<int>(env.type()));
+        spdlog::info("[{}] Received envelope type={}, payload_size={}", 
+            remote_endpoint_, static_cast<int>(env.type()), env.payload().size());
 
         handle_envelope(env);
 
