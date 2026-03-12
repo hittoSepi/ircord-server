@@ -697,6 +697,12 @@ void Session::handle_key_request(const KeyRequest& kr) {
 
     bundle.set_recipient_for(kr.user_id());
 
+    // Debug: verify serialization
+    std::string debug_payload;
+    bundle.SerializeToString(&debug_payload);
+    spdlog::debug("[{}] KEY_REQUEST: bundle serialized size={}", remote_endpoint_, debug_payload.size());
+    spdlog::debug("[{}] KEY_REQUEST: recipient_for='{}'", remote_endpoint_, bundle.recipient_for());
+
     spdlog::debug("[{}] KEY_REQUEST: sending bundle for {} (opk={}, recipient_for={})",
         remote_endpoint_, kr.user_id(), !opk.empty(), bundle.recipient_for());
 
