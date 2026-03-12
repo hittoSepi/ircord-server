@@ -10,6 +10,8 @@
 #include "config.hpp"
 #include "server.hpp"
 #include "utils/string_utils.hpp"
+#include "version.hpp"
+#include <spdlog/spdlog.h>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
@@ -63,7 +65,17 @@ ${args} --config ./server.toml
 	}
 
 	void print_version() {
-		std::cout << utils::format_template( version_string, template_strings );
+		std::cout << "IRCord-Server v" << ircord::kProjectVersion << "\n"
+				  << "Git: " << ircord::kGitCommitHash << "\n"
+				  << "Built: " << ircord::kBuildTimestamp << "\n"
+				  << "https://github.com/hittoSepi/ircord\n";
+	}
+
+	void log_startup_version() {
+		spdlog::info("========================================");
+		spdlog::info("IRCord-Server v{} (git: {})", ircord::kProjectVersion, ircord::kGitCommitHash);
+		spdlog::info("Built: {}", ircord::kBuildTimestamp);
+		spdlog::info("========================================");
 	}
 
 
@@ -116,6 +128,9 @@ int main( int argc, char *argv[] ) {
 
 	// Validate configuration
 	ircord::ConfigLoader::validate( config );
+
+	// Log version info
+	log_startup_version();
 
 	// Create and run server
 	ircord::Server server( config );

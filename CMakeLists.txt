@@ -32,6 +32,52 @@ if(NOT TOML11_INCLUDE_DIR)
     message(FATAL_ERROR "toml11 not found. Install via vcpkg: vcpkg install toml11")
 endif()
 
+# Generate version info with build timestamp and git commit
+string(TIMESTAMP BUILD_TIMESTAMP "%Y-%m-%d %H:%M:%S")
+
+# Try to get git commit hash
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_COMMIT_HASH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} describe --tags --always
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
+
+if(NOT GIT_COMMIT_HASH)
+    set(GIT_COMMIT_HASH "unknown")
+endif()
+if(NOT GIT_VERSION)
+    set(GIT_VERSION "${PROJECT_VERSION}")
+endif()
+
+# Generate version header
+set(VERSION_HEADER "${CMAKE_CURRENT_BINARY_DIR}/version.hpp")
+file(WRITE ${VERSION_HEADER} "// Auto-generated version header - DO NOT EDIT
+#pragma once
+
+#include <string_view>
+
+namespace ircord {
+    inline constexpr std::string_view kVersionString = \"${GIT_VERSION}\";
+    inline constexpr std::string_view kGitCommitHash = \"${GIT_COMMIT_HASH}\";
+    inline constexpr std::string_view kBuildTimestamp = \"${BUILD_TIMESTAMP}\";
+    inline constexpr std::string_view kProjectVersion = \"${PROJECT_VERSION}\";
+} // namespace ircord
+")
+
+message(STATUS "IRCord Server Version: ${GIT_VERSION} (${GIT_COMMIT_HASH}) built at ${BUILD_TIMESTAMP}")
+
 # Protobuf compilation
 set(PROTO_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/proto/ircord.proto")
 protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ${PROTO_FILES})

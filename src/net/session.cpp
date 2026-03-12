@@ -6,6 +6,7 @@
 #include "commands/command_handler.hpp"
 #include "security/virus_scanner.hpp"
 #include "voice/voice_room_manager.hpp"
+#include "version.hpp"
 
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/read.hpp>
@@ -88,7 +89,8 @@ Session::~Session() {
 void Session::start() {
     auto self = shared_from_this();
     boost::asio::post(strand_, [this, self] {
-        spdlog::info("[{}] Session started", remote_endpoint_);
+        spdlog::info("[{}] Session started (server v{} git:{})", 
+            remote_endpoint_, kProjectVersion, kGitCommitHash);
         do_tls_handshake();
     });
 }
