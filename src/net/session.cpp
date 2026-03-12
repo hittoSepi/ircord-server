@@ -697,8 +697,8 @@ void Session::handle_key_request(const KeyRequest& kr) {
 
     bundle.set_recipient_for(kr.user_id());
 
-    spdlog::debug("[{}] KEY_REQUEST: sending bundle for {} (opk={})",
-        remote_endpoint_, kr.user_id(), !opk.empty());
+    spdlog::debug("[{}] KEY_REQUEST: sending bundle for {} (opk={}, recipient_for={})",
+        remote_endpoint_, kr.user_id(), !opk.empty(), bundle.recipient_for());
 
     send_envelope(MT_KEY_BUNDLE, bundle);
 }
