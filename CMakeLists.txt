@@ -138,7 +138,6 @@ target_link_libraries(ircord-server PRIVATE
     OpenSSL::SSL
     OpenSSL::Crypto
     protobuf::libprotobuf
-    absl::abseil_dll
     spdlog::spdlog
     unofficial-sodium::sodium
     SQLiteCpp
@@ -146,6 +145,10 @@ target_link_libraries(ircord-server PRIVATE
 )
 
 if(WIN32)
+    if(TARGET absl::abseil_dll)
+        target_link_libraries(ircord-server PRIVATE absl::abseil_dll)
+    endif()
+
     target_link_libraries(ircord-server PRIVATE ws2_32 crypt32)
     set_target_properties(ircord-server PROPERTIES WIN32_EXECUTABLE FALSE)
 else()
