@@ -7,6 +7,7 @@
 #include "security/virus_scanner.hpp"
 #include "voice/voice_room_manager.hpp"
 #include "version.hpp"
+#include "utils/nickname_utils.hpp"
 
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/read.hpp>
@@ -431,6 +432,28 @@ void Session::handle_auth_response(const AuthResponse& auth) {
         disconnect("Invalid user_id");
         return;
     }
+
+    // --- Duplicate nickname check (case-insensitive) ---
+    // Check if the nickname is already in use by another online user
+    if (!server_ctx_.is_nickname_available(auth.user_id())) {
+        // Generate alternative suggestions
+        auto suggestions = utils::generate_nick_suggestions(auth.user_id(), 3);
+        std::string suggestion_str = utils::format_nick_suggestions(suggestions);
+        
+        std::string error_msg = "Nickname '" + auth.user_id() + "' is already in use." + suggestion_str;
+        
+        spdlog::warn("[{}] Nickname '{}' rejected - already in use", 
+            remote_endpoint_, auth.user_id());
+        
+        // Send AUTH_FAIL with specific error code for duplicate nickname
+        Error err;
+        err.set_code(4011);
+        err.set_message(error_msg);
+        send_envelope(MT_AUTH_FAIL, err);
+        
+        disconnect("Nickname already in use: " + auth.user_id());
+        return;
+    }
     if (auth.identity_pub().size() != crypto_sign_PUBLICKEYBYTES) {
         send_error(4007, "Invalid identity_pub length");
         disconnect("Bad identity_pub");
@@ -510,6 +533,20 @@ void Session::handle_auth_response(const AuthResponse& auth) {
 
     send_envelope(MT_AUTH_OK, Empty());
     set_state(SessionState::Established);
+
+    // --- Send MOTD if configured ---
+    const std::string& motd = server_ctx_.motd();
+    if ( !motd.empty() ) {
+        MotdMessage motd_msg;
+        // Split MOTD on newlines
+        std::istringstream motd_stream( motd );
+        std::string line;
+        while ( std::getline( motd_stream, line ) ) {
+            motd_msg.add_lines( line );
+        }
+        send_envelope( MT_MOTD, motd_msg );
+        spdlog::debug( "[{}] Sent MOTD to user: {}", remote_endpoint_, user_id_ );
+    }
 
     spdlog::info("[{}] Session established for user: {}", remote_endpoint_, user_id_);
 

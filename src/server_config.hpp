@@ -20,7 +20,7 @@ namespace ircord {
 host = "0.0.0.0"
 
 # Server port (6667 is the historical IRC port)
-port = 6667
+port = 6697
 
 # Log level: debug, info, warn, error
 log_level = "info"

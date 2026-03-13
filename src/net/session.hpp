@@ -170,6 +170,15 @@ public:
     // Find an online authenticated session by user_id (returns nullptr if offline)
     virtual std::shared_ptr<Session> find_session(const std::string& user_id) = 0;
 
+    // Check if a nickname is already in use by an online user (case-insensitive)
+    // Returns the existing session if found, nullptr if available
+    virtual std::shared_ptr<Session> find_session_by_nickname(const std::string& nickname) = 0;
+
+    // Check if a nickname is available (not in use by another online user)
+    // This is the primary method for nickname availability checks
+    virtual bool is_nickname_available(const std::string& nickname, 
+                                        const std::string& exclude_user_id = "") = 0;
+
     // DB stores for auth and offline delivery
     virtual db::UserStore& user_store() = 0;
     virtual db::OfflineStore& offline_store() = 0;
@@ -186,6 +195,7 @@ public:
     virtual int ping_interval_sec() const = 0;
     virtual int ping_timeout_sec() const = 0;
     virtual int msg_rate_per_sec() const = 0;
+    virtual const std::string& motd() const = 0;
 };
 
 } // namespace ircord::net

@@ -7,6 +7,7 @@
 #include "db/file_store.hpp"
 #include "commands/command_handler.hpp"
 #include "voice/voice_room_manager.hpp"
+#include "utils/nickname_utils.hpp"
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/strand.hpp>
@@ -47,6 +48,9 @@ public:
     void broadcast_presence(const PresenceUpdate& update,
                             std::shared_ptr<Session> exclude = nullptr) override;
     std::shared_ptr<Session> find_session(const std::string& user_id) override;
+    std::shared_ptr<Session> find_session_by_nickname(const std::string& nickname) override;
+    bool is_nickname_available(const std::string& nickname, 
+                               const std::string& exclude_user_id = "") override;
     db::UserStore& user_store() override { return user_store_; }
     db::OfflineStore& offline_store() override { return offline_store_; }
     db::Database& database() override;
@@ -61,11 +65,13 @@ public:
     int ping_interval_sec() const override { return ping_interval_sec_; }
     int ping_timeout_sec() const override { return ping_timeout_sec_; }
     int msg_rate_per_sec() const override { return msg_rate_per_sec_; }
+    const std::string& motd() const override { return motd_; }
 
     // Set limits from config
     void set_ping_intervals(int interval_sec, int timeout_sec);
     void set_rate_limits(int msg_rate_per_sec, int conn_rate_per_min);
     void set_max_connections(int max_connections);
+    void set_motd(const std::string& motd) { motd_ = motd; }
 
     // Set database reference (for command handler)
     void set_database(db::Database& db) { db_ = &db; }
@@ -119,6 +125,9 @@ private:
 
     // Shutdown flag
     std::atomic<bool> shutting_down_{false};
+    
+    // MOTD (Message of the Day)
+    std::string motd_;
 };
 
 } // namespace ircord::net

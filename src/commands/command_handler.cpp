@@ -3,6 +3,7 @@
 #include "db/database.hpp"
 #include "db/user_store.hpp"
 #include "db/offline_store.hpp"
+#include "utils/channel_utils.hpp"
 #include <spdlog/spdlog.h>
 #include <algorithm>
 
@@ -108,9 +109,12 @@ CommandResponse CommandHandler::cmd_join(const std::vector<std::string>& args, S
         return make_response(false, "Usage: /join <#channel>", "join");
     }
 
-    std::string channel = args[0];
-    if (channel.empty() || channel[0] != '#') {
-        return make_response(false, "Channel name must start with #", "join");
+    // Sanitize channel name: auto-add # prefix, strip invalid chars
+    std::string channel = utils::sanitize_channel_name(args[0]);
+    
+    // Validate the sanitized channel has content beyond just the prefix
+    if (!utils::is_valid_channel_name(channel)) {
+        return make_response(false, "Invalid channel name", "join");
     }
 
     const std::string& user_id = session->user_id();

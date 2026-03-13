@@ -31,6 +31,12 @@ log_level = "info"
 # Maximum concurrent connections
 max_connections = 100
 
+# Message of the Day (optional)
+# Supports single string or array for multiline:
+# motd = "Welcome to IRCord!"
+# motd = ["Welcome to IRCord!", "Please read the rules."]
+motd = ""
+
 [tls]
 # TLS certificate file (required)
 # Generate self-signed for testing:
@@ -121,6 +127,9 @@ struct ServerConfig {
     std::string clamav_socket;               // Unix socket path for clamd
     std::string clamav_host = "127.0.0.1";   // TCP host for clamd
     uint16_t clamav_port = 0;                // TCP port for clamd (0 = disabled)
+    
+    // [motd]
+    std::string motd;                        // Message of the Day (empty = disabled)
 };
 
 class ConfigLoader {

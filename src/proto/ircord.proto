@@ -61,6 +61,9 @@ enum MessageType {
   MT_FILE_COMPLETE    = 84;   // Server → Client: Transfer complete
   MT_FILE_ERROR       = 85;   // Server → Client: Transfer error
 
+  // Server messages
+  MT_MOTD             = 75;   // Server → Client: Message of the Day
+
   // Errors
   MT_ERROR            = 99;
 }
@@ -283,4 +286,9 @@ message FileMetadata {
   int64 expires_at = 9;        // Expiration timestamp
   bytes file_checksum = 10;    // SHA-256 of file
   string storage_path = 11;    // Server storage location
+}
+
+// MOTD (Message of the Day) message
+message MotdMessage {
+  repeated string lines = 1;   // MOTD lines (split on newlines)
 }

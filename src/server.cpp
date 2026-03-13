@@ -99,6 +99,7 @@ Server::Server(const ServerConfig& config)
         config_.msg_rate_per_sec,
         config_.conn_rate_per_min);
     listener_->set_max_connections(config_.max_connections);
+    listener_->set_motd(config_.motd);
 
     // Set global pointer for signal handler
     g_server = this;

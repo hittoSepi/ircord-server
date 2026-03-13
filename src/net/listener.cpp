@@ -282,6 +282,41 @@ std::shared_ptr<Session> Listener::find_session(const std::string& user_id) {
     return nullptr;
 }
 
+std::shared_ptr<Session> Listener::find_session_by_nickname(const std::string& nickname) {
+    std::lock_guard<std::mutex> lock(sessions_mutex_);
+    
+    std::string normalized_target = utils::normalize_nickname(nickname);
+    
+    for (const auto& [user_id, session] : sessions_by_user_) {
+        if (utils::normalize_nickname(user_id) == normalized_target) {
+            return session;
+        }
+    }
+    return nullptr;
+}
+
+bool Listener::is_nickname_available(const std::string& nickname, 
+                                     const std::string& exclude_user_id) {
+    std::lock_guard<std::mutex> lock(sessions_mutex_);
+    
+    std::string normalized_target = utils::normalize_nickname(nickname);
+    std::string normalized_exclude = utils::normalize_nickname(exclude_user_id);
+    
+    for (const auto& [user_id, session] : sessions_by_user_) {
+        // Skip the excluded user (for nickname changes by same user)
+        if (!exclude_user_id.empty() && 
+            utils::normalize_nickname(user_id) == normalized_exclude) {
+            continue;
+        }
+        
+        // Check if any online user matches the nickname (case-insensitive)
+        if (utils::normalize_nickname(user_id) == normalized_target) {
+            return false;  // Nickname is taken
+        }
+    }
+    return true;  // Nickname is available
+}
+
 void Listener::broadcast_presence(const PresenceUpdate& update,
                                    std::shared_ptr<Session> exclude) {
     Envelope env;

@@ -116,6 +116,24 @@ namespace ircord {
 				get_optional<int64_t>( av, "clamav_port", 0 ) );
 		}
 
+		// [motd] section - optional
+		if ( data.contains( "motd" ) ) {
+			const auto &motd_val = data.at( "motd" );
+			if ( motd_val.is_array() ) {
+				// Array of strings for multiline MOTD
+				const auto &lines = motd_val.as_array();
+				std::ostringstream oss;
+				for ( size_t i = 0; i < lines.size(); ++i ) {
+					if ( i > 0 ) oss << "\n";
+					oss << lines[i].as_string();
+				}
+				config.motd = oss.str();
+			} else if ( motd_val.is_string() ) {
+				// Single string
+				config.motd = motd_val.as_string();
+			}
+		}
+
 		return config;
 	}
 
