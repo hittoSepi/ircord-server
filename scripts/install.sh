@@ -4,10 +4,10 @@
 # Ubuntu 22.04+ / Debian 12+, x86_64 tai aarch64
 #
 # Käyttö:
-#   curl -fsSL https://raw.githubusercontent.com/hittoSepi/IRCord/main/scripts/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/hittoSepi/ircord-server/main/scripts/install.sh | sudo bash
 #
 # Tai lataa ja aja:
-#   wget https://raw.githubusercontent.com/hittoSepi/IRCord/main/scripts/install.sh
+#   wget https://raw.githubusercontent.com/hittoSepi/ircord-server/main/scripts/install.sh
 #   chmod +x install.sh
 #   sudo ./install.sh
 #
@@ -37,7 +37,7 @@ IRCORD_PORT="${IRCORD_PORT:-6667}"
 INSTALL_DIR="/opt/ircord"
 DATA_DIR="/var/lib/ircord"
 LOG_DIR="/var/log/ircord"
-REPO_URL="https://github.com/hittoSepi/IRCord.git"
+REPO_URL="https://github.com/hittoSepi/ircord-server.git"
 BUILD_DIR="/tmp/ircord-build"
 SERVICE_USER="ircord"
 

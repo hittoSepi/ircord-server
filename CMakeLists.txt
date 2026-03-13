@@ -1,88 +1,92 @@
 cmake_minimum_required(VERSION 3.20)
-project(ircord-server VERSION 0.1.0 LANGUAGES CXX)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 OLD)
+endif()
 
-# C++20
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(PROJECT_NAME "ircord-server")
+set(PROJECT_DESCRIPTION "IRCord Dedicated Server")
 
-# Export compile commands for tools
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-# Find vcpkg integration
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/functions.cmake")
+
+# Find vcpkg integration before project() so dependencies resolve correctly.
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    if(DEFINED ENV{CMAKE_TOOLCHAIN_FILE} AND NOT "$ENV{CMAKE_TOOLCHAIN_FILE}" STREQUAL "")
+        set(CMAKE_TOOLCHAIN_FILE "$ENV{CMAKE_TOOLCHAIN_FILE}")
+    elseif(DEFINED ENV{VCPKG_ROOT} AND NOT "$ENV{VCPKG_ROOT}" STREQUAL "")
+        set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+    endif()
+endif()
+
 if(DEFINED CMAKE_TOOLCHAIN_FILE)
     message(STATUS "Using vcpkg toolchain: ${CMAKE_TOOLCHAIN_FILE}")
 endif()
 
-# Find dependencies
-find_package(Boost REQUIRED COMPONENTS system)
+if(DEFINED ENV{VCPKG_ROOT} AND NOT "$ENV{VCPKG_ROOT}" STREQUAL "")
+    if(DEFINED ENV{VCPKG_TARGET_TRIPLET} AND NOT "$ENV{VCPKG_TARGET_TRIPLET}" STREQUAL "")
+        set(VCPKG_TARGET_TRIPLET "$ENV{VCPKG_TARGET_TRIPLET}")
+    elseif(WIN32)
+        set(VCPKG_TARGET_TRIPLET "x64-windows")
+    else()
+        set(VCPKG_TARGET_TRIPLET "x64-linux")
+    endif()
+
+    set(_LOCAL_VCPKG_INSTALLED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}")
+    set(_GLOBAL_VCPKG_INSTALLED_DIR "$ENV{VCPKG_ROOT}/installed/${VCPKG_TARGET_TRIPLET}")
+
+    if(EXISTS "${_LOCAL_VCPKG_INSTALLED_DIR}")
+        set(_VCPKG_INSTALLED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed")
+        set(VCPKG_INSTALLED_DIR "${_VCPKG_INSTALLED_DIR}")
+        list(PREPEND CMAKE_PREFIX_PATH "${_LOCAL_VCPKG_INSTALLED_DIR}")
+        set(OPENSSL_ROOT_DIR "${_LOCAL_VCPKG_INSTALLED_DIR}")
+        message(STATUS "Using local vcpkg package prefix: ${_LOCAL_VCPKG_INSTALLED_DIR}")
+    elseif(EXISTS "${_GLOBAL_VCPKG_INSTALLED_DIR}")
+        set(_VCPKG_INSTALLED_DIR "$ENV{VCPKG_ROOT}/installed")
+        set(VCPKG_INSTALLED_DIR "${_VCPKG_INSTALLED_DIR}")
+        list(PREPEND CMAKE_PREFIX_PATH "${_GLOBAL_VCPKG_INSTALLED_DIR}")
+        set(OPENSSL_ROOT_DIR "${_GLOBAL_VCPKG_INSTALLED_DIR}")
+        message(STATUS "Using global vcpkg package prefix: ${_GLOBAL_VCPKG_INSTALLED_DIR}")
+    endif()
+endif()
+
+generate_version()
+
+project(${PROJECT_NAME} VERSION ${PROJECT_VERSION} DESCRIPTION ${PROJECT_DESCRIPTION} LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(WIN32)
+    add_compile_definitions(_WIN32_WINNT=0x0A00 NOMINMAX WIN32_LEAN_AND_MEAN)
+    add_compile_definitions(BOOST_ALL_NO_LIB)
+endif()
+
+set(Boost_NO_BOOST_CMAKE ON)
+find_package(Boost REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(Protobuf REQUIRED)
+find_package(absl CONFIG REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(unofficial-sodium CONFIG REQUIRED)
 find_package(SQLiteCpp REQUIRED)
+find_package(toml11 CONFIG REQUIRED)
 
-# toml11 is header-only, find it differently
-find_path(TOML11_INCLUDE_DIR "toml.hpp"
-    PATHS "${CMAKE_CURRENT_SOURCE_DIR}/external/toml11"
-          "${CMAKE_CURRENT_SOURCE_DIR}/vendor/toml11"
-          "$ENV{VCPKG_ROOT}/installed/x64-windows/include"
-)
-
-if(NOT TOML11_INCLUDE_DIR)
-    message(FATAL_ERROR "toml11 not found. Install via vcpkg: vcpkg install toml11")
-endif()
-
-# Generate version info with build timestamp and git commit
-string(TIMESTAMP BUILD_TIMESTAMP "%Y-%m-%d %H:%M:%S")
-
-# Try to get git commit hash
-find_package(Git QUIET)
-if(GIT_FOUND)
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        OUTPUT_VARIABLE GIT_COMMIT_HASH
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-    )
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} describe --tags --always
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        OUTPUT_VARIABLE GIT_VERSION
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-    )
-endif()
-
-if(NOT GIT_COMMIT_HASH)
-    set(GIT_COMMIT_HASH "unknown")
-endif()
-if(NOT GIT_VERSION)
-    set(GIT_VERSION "${PROJECT_VERSION}")
-endif()
-
-# Generate version header
-set(VERSION_HEADER "${CMAKE_CURRENT_BINARY_DIR}/version.hpp")
-file(WRITE ${VERSION_HEADER} "// Auto-generated version header - DO NOT EDIT
-#pragma once
-
-#include <string_view>
-
-namespace ircord {
-    inline constexpr std::string_view kVersionString = \"${GIT_VERSION}\";
-    inline constexpr std::string_view kGitCommitHash = \"${GIT_COMMIT_HASH}\";
-    inline constexpr std::string_view kBuildTimestamp = \"${BUILD_TIMESTAMP}\";
-    inline constexpr std::string_view kProjectVersion = \"${PROJECT_VERSION}\";
-} // namespace ircord
-")
-
-message(STATUS "IRCord Server Version: ${GIT_VERSION} (${GIT_COMMIT_HASH}) built at ${BUILD_TIMESTAMP}")
-
-# Protobuf compilation
 set(PROTO_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/proto/ircord.proto")
+if(NOT Protobuf_PROTOC_EXECUTABLE)
+    set(_LOCAL_PROTOC "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/tools/protobuf/protoc.exe")
+    if(EXISTS "${_LOCAL_PROTOC}")
+        set(Protobuf_PROTOC_EXECUTABLE "${_LOCAL_PROTOC}")
+        if(NOT TARGET protobuf::protoc)
+            add_executable(protobuf::protoc IMPORTED)
+            set_target_properties(protobuf::protoc PROPERTIES IMPORTED_LOCATION "${Protobuf_PROTOC_EXECUTABLE}")
+        endif()
+    endif()
+endif()
+
 protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ${PROTO_FILES})
 
-# Source files
 set(SERVER_SRC
     src/main.cpp
     src/server.cpp
@@ -122,70 +126,52 @@ set(SERVER_HDRS
     ${PROTO_HDRS}
 )
 
-# Create executable
 add_executable(ircord-server ${SERVER_SRC} ${SERVER_HDRS})
 
-# Include directories
 target_include_directories(ircord-server PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_BINARY_DIR}  # For protobuf generated files
-    ${TOML11_INCLUDE_DIR}
-    ${Protobuf_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${Boost_INCLUDE_DIRS}
 )
 
-# Link libraries
 target_link_libraries(ircord-server PRIVATE
-    Boost::system
     OpenSSL::SSL
     OpenSSL::Crypto
     protobuf::libprotobuf
+    absl::abseil_dll
     spdlog::spdlog
-    $<IF:$<TARGET_EXISTS:spdlog::spdlog_header_only>,spdlog::spdlog_header_only,>
     unofficial-sodium::sodium
     SQLiteCpp
+    toml11::toml11
 )
 
-# Platform-specific settings
 if(WIN32)
-    # Windows-specific: link winsock2
     target_link_libraries(ircord-server PRIVATE ws2_32 crypt32)
-
-    # Disable automatic linking of Boost libraries (we use FindBoost)
-    target_compile_definitions(ircord-server PRIVATE BOOST_ALL_NO_LIB)
-
-    # Windows subsystem: console
-    set_target_properties(ircord-server PROPERTIES
-        WIN32_EXECUTABLE FALSE
-    )
+    set_target_properties(ircord-server PROPERTIES WIN32_EXECUTABLE FALSE)
 else()
-    # Unix-like: pthread, rt
     target_link_libraries(ircord-server PRIVATE pthread rt)
 endif()
 
-# Compiler warnings
 if(MSVC)
     target_compile_options(ircord-server PRIVATE /W4 /WX-)
 else()
     target_compile_options(ircord-server PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/certs)
 
-
-# Copy config template to build directory
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config/server.toml.example
-               ${CMAKE_BINARY_DIR}/server.toml COPYONLY)
-
-# Install rules
-install(TARGETS ircord-server
-    RUNTIME DESTINATION bin
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/config/server.toml.example
+    ${CMAKE_BINARY_DIR}/server.toml
+    COPYONLY
 )
 
-install(FILES config/server.toml.example
+install(TARGETS ircord-server RUNTIME DESTINATION bin)
+
+install(
+    FILES config/server.toml.example
     DESTINATION config
     RENAME server.toml
 )
 
-# Enable testing
 enable_testing()
