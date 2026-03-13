@@ -195,25 +195,37 @@ void Listener::shutdown() {
 
 void Listener::on_session_authenticated(std::shared_ptr<Session> session) {
     const std::string& user_id = session->user_id();
+    std::vector<std::string> online_user_ids;
 
-    std::lock_guard<std::mutex> lock(sessions_mutex_);
+    {
+        std::lock_guard<std::mutex> lock(sessions_mutex_);
 
-    // Check if user already has a session
-    auto existing_it = sessions_by_user_.find(user_id);
-    if (existing_it != sessions_by_user_.end()) {
-        // Disconnect old session
-        spdlog::info("User {} already connected, replacing old session", user_id);
-        existing_it->second->disconnect("New login from another location");
-        users_by_session_.erase(existing_it->second);
-        sessions_by_user_.erase(existing_it);
+        // Check if user already has a session
+        auto existing_it = sessions_by_user_.find(user_id);
+        if (existing_it != sessions_by_user_.end()) {
+            // Disconnect old session
+            spdlog::info("User {} already connected, replacing old session", user_id);
+            existing_it->second->disconnect("New login from another location");
+            users_by_session_.erase(existing_it->second);
+            sessions_by_user_.erase(existing_it);
+        }
+
+        // Add new session
+        sessions_by_user_[user_id] = session;
+        users_by_session_[session] = user_id;
+
+        online_user_ids.reserve(sessions_by_user_.size());
+        for (const auto& [online_user_id, online_session] : sessions_by_user_) {
+            if (online_session && online_session->state() == SessionState::Established) {
+                online_user_ids.push_back(online_user_id);
+            }
+        }
+
+        spdlog::info("User {} authenticated. Total sessions: {}",
+            user_id, sessions_by_user_.size());
     }
 
-    // Add new session
-    sessions_by_user_[user_id] = session;
-    users_by_session_[session] = user_id;
-
-    spdlog::info("User {} authenticated. Total sessions: {}",
-        user_id, sessions_by_user_.size());
+    send_presence_snapshot(session, online_user_ids);
 }
 
 void Listener::on_session_disconnected(std::shared_ptr<Session> session, const std::string& reason) {
@@ -330,6 +342,32 @@ void Listener::broadcast_presence(const PresenceUpdate& update,
     env.set_payload(payload.data(), payload.size());
 
     broadcast(env, exclude);
+}
+
+void Listener::send_presence_snapshot(const std::shared_ptr<Session>& session,
+                                      const std::vector<std::string>& online_user_ids) {
+    if (!session) {
+        return;
+    }
+
+    for (const auto& online_user_id : online_user_ids) {
+        PresenceUpdate update;
+        update.set_user_id(online_user_id);
+        update.set_status(PresenceUpdate::ONLINE);
+
+        Envelope env;
+        env.set_seq(0);
+        env.set_timestamp_ms(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        env.set_type(MT_PRESENCE);
+
+        std::vector<uint8_t> payload(update.ByteSizeLong());
+        update.SerializeToArray(payload.data(), static_cast<int>(payload.size()));
+        env.set_payload(payload.data(), payload.size());
+
+        session->send(env);
+    }
 }
 
 void Listener::set_ping_intervals(int interval_sec, int timeout_sec) {

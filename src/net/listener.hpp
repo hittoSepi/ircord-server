@@ -80,6 +80,8 @@ private:
     void do_accept();
     void on_signal(boost::system::error_code ec, int signal_number);
     void cleanup_dead_sessions();
+    void send_presence_snapshot(const std::shared_ptr<Session>& session,
+                                const std::vector<std::string>& online_user_ids);
 
     using Strand = boost::asio::strand<boost::asio::io_context::executor_type>;
     using Acceptor = boost::asio::ip::tcp::acceptor;
