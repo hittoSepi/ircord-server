@@ -208,11 +208,10 @@ void DirectoryClient::schedule_next_ping() {
 void DirectoryClient::post_request(const std::string& path, const std::string& json_body,
                                    std::function<void(bool, const std::string&)> callback) {
     auto resolver = std::make_shared<tcp::resolver>(io_context_);
-    auto query = tcp::resolver::query(directory_host_, std::to_string(directory_port_));
     
-    resolver->async_resolve(query, 
+    resolver->async_resolve(directory_host_, std::to_string(directory_port_),
         [this, self = shared_from_this(), path, json_body, callback, resolver](
-            boost::system::error_code ec, tcp::resolver::iterator endpoints) {
+            boost::system::error_code ec, tcp::resolver::results_type results) {
             
             if (ec) {
                 callback(false, "DNS resolution failed: " + ec.message());
@@ -220,8 +219,8 @@ void DirectoryClient::post_request(const std::string& path, const std::string& j
             }
             
             auto socket = std::make_shared<tcp::socket>(io_context_);
-            boost::asio::async_connect(*socket, endpoints,
-                [this, self, path, json_body, callback, socket](boost::system::error_code ec, tcp::resolver::iterator) {
+            boost::asio::async_connect(*socket, results,
+                [this, self, path, json_body, callback, socket](boost::system::error_code ec, const tcp::endpoint&) {
                     
                     if (ec) {
                         callback(false, "Connection failed: " + ec.message());

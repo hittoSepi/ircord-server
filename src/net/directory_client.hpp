@@ -43,7 +43,6 @@ private:
                       std::function<void(bool, const std::string&)> callback);
 
     boost::asio::io_context& io_context_;
-    boost::asio::ssl::context ssl_context_;
     std::unique_ptr<boost::asio::steady_timer> timer_;
     
     ServerConfig config_;

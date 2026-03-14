@@ -16,7 +16,7 @@ max_connections = 100
 
 # Public server listing
 # Set to true to list this server in the public IRCord directory
-public = false
+public = true
 
 [tls]
 # TLS certificate file (required)
@@ -91,7 +91,7 @@ clamav_port = 0
 # Only used when [server].public = true
 
 # Enable directory registration
-enabled = false
+enabled = true
 
 # Directory service URL
 url = "https://directory.ircord.dev"
@@ -100,7 +100,7 @@ url = "https://directory.ircord.dev"
 ping_interval_sec = 300
 
 # Display name for this server in the directory
-server_name = "My IRCord Server"
+server_name = "Rausku IRCord Server"
 
 # Short description (max ~100 characters)
 description = "A friendly IRCord encrypted chat server"
