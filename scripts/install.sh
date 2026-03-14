@@ -295,7 +295,7 @@ fi
 
 # Generate server.toml
 
-FILE_ENCRYPTION_KEY = $(openssl rand --hex 32)
+FILE_ENCRYPTION_KEY=$(openssl rand -hex 32)
 
 cat > "$INSTALL_DIR/server.toml" <<EOF
 # IRCord Server Configuration
@@ -306,7 +306,7 @@ host = "0.0.0.0"
 port = ${IRCORD_PORT}
 log_level = "info"
 max_connections = 100
-public = ${IRCORD_PUBLIC}
+public = $( [ "$IRCORD_PUBLIC" = "yes" ] && echo "true" || echo "false" )
 
 [tls]
 cert_file = "${CERT_PATH}"
