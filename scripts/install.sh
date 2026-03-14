@@ -165,7 +165,7 @@ step "3/8  Source code + build"
 # =============================================================================
 rm -rf "$BUILD_DIR"
 info "Cloning $REPO_URL → $BUILD_DIR"
-git clone --depth 1 "$REPO_URL" "$BUILD_DIR" 2>&1 | tail -3
+git clone --depth 1 "$REPO_URL" "$BUILD_DIR/ircord-server" 2>&1 | tail -3
 
 # Use ircord-server subdirectory
 SERVER_DIR="$BUILD_DIR/ircord-server"
