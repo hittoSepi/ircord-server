@@ -182,7 +182,7 @@ cmake \
 info "CMake build..."
 cmake --build "$SERVER_DIR/build" -j"$(nproc)" 2>&1 | grep -E '(%\]|error:|warning:)' | tail -20
 
-BINARY="$SERVER_DIR/build"
+BINARY="$SERVER_DIR/build/ircord-server"
 [ -f "$BINARY" ] || error "Binary not found: $BINARY"
 ok "Binary built: $(du -sh "$BINARY" | cut -f1)"
 
