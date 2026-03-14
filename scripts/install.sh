@@ -182,7 +182,7 @@ cmake \
 info "CMake build..."
 cmake --build "$SERVER_DIR/build" -j"$(nproc)" 2>&1 | grep -E '(%\]|error:|warning:)' | tail -20
 
-BINARY="$SERVER_DIR/build/ircord-server"
+BINARY="$SERVER_DIR/build"
 [ -f "$BINARY" ] || error "Binary not found: $BINARY"
 ok "Binary built: $(du -sh "$BINARY" | cut -f1)"
 
@@ -294,6 +294,9 @@ if [ "$IRCORD_USE_LETSENCRYPT" = "yes" ] && [ -d "/etc/letsencrypt/live/$IRCORD_
 fi
 
 # Generate server.toml
+
+FILE_ENCRYPTION_KEY = $()
+
 cat > "$INSTALL_DIR/server.toml" <<EOF
 # IRCord Server Configuration
 # Generated on $(date -Iseconds)
@@ -350,7 +353,7 @@ ban_duration_min = 30
 # Master key for file encryption at rest (64 hex characters = 32 bytes)
 # Generate a key with: openssl rand -hex 32
 # Leave empty to disable file encryption (files stored unencrypted - NOT RECOMMENDED)
-file_encryption_key = "$(openssl rand -hex 32)"
+file_encryption_key = "${FILE_ENCRYPTION_KEY}"
 
 [antivirus]
 # ClamAV daemon (clamd) configuration for virus scanning
