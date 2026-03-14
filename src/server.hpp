@@ -2,6 +2,7 @@
 
 #include "config.hpp"
 #include "net/listener.hpp"
+#include "net/directory_client.hpp"
 #include "db/database.hpp"
 #include "db/user_store.hpp"
 #include "db/offline_store.hpp"
@@ -61,6 +62,9 @@ namespace ircord {
 
 		// Listener
 		std::unique_ptr<net::Listener> listener_;
+
+		// Directory client (for public server listing)
+		std::shared_ptr<DirectoryClient> directory_client_;
 
 		// Running state
 		std::atomic<bool> running_ { false };

@@ -103,6 +103,14 @@ Server::Server(const ServerConfig& config)
 
     // Set global pointer for signal handler
     g_server = this;
+
+    // Create directory client if public listing is enabled
+    if (config_.is_public && config_.directory_enabled) {
+        directory_client_ = std::make_shared<DirectoryClient>(ioc_, config_);
+        spdlog::info("Directory client created for public server listing");
+    } else if (config_.is_public && !config_.directory_enabled) {
+        spdlog::warn("Server is marked public but directory registration is disabled");
+    }
 }
 
 Server::~Server() {
@@ -208,6 +216,11 @@ void Server::run() {
     // Start listener
     listener_->run();
 
+    // Start directory client if enabled
+    if (directory_client_) {
+        directory_client_->start();
+    }
+
     // Start thread pool
     create_thread_pool();
 
@@ -228,6 +241,11 @@ void Server::shutdown() {
     }
 
     spdlog::info("Shutting down...");
+
+    // Stop directory client
+    if (directory_client_) {
+        directory_client_->stop();
+    }
 
     // Stop accepting new connections
     if (listener_) {

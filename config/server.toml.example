@@ -6,13 +6,17 @@
 host = "0.0.0.0"
 
 # Server port (6667 is the historical IRC port)
-port = 6667
+port = 6697
 
 # Log level: debug, info, warn, error
 log_level = "info"
 
 # Maximum concurrent connections
 max_connections = 100
+
+# Public server listing
+# Set to true to list this server in the public IRCord directory
+public = false
 
 [tls]
 # TLS certificate file (required)
@@ -81,3 +85,22 @@ file_encryption_key = ""
 clamav_socket = ""
 clamav_host = "127.0.0.1"
 clamav_port = 0
+
+[directory]
+# Directory service for public server listing
+# Only used when [server].public = true
+
+# Enable directory registration
+enabled = false
+
+# Directory service URL
+url = "https://directory.ircord.dev"
+
+# How often to ping the directory (seconds)
+ping_interval_sec = 300
+
+# Display name for this server in the directory
+server_name = "My IRCord Server"
+
+# Short description (max ~100 characters)
+description = "A friendly IRCord encrypted chat server"

@@ -33,7 +33,7 @@ step()    { echo -e "\n${CYAN}════════════════�
 [ "$(id -u)" -eq 0 ] || error "Aja sudo:lla: sudo $0"
 
 # --- Muuttujat ----------------------------------------------------------------
-IRCORD_PORT="${IRCORD_PORT:-6667}"
+IRCORD_PORT="${IRCORD_PORT:-6697}"
 INSTALL_DIR="/opt/ircord"
 DATA_DIR="/var/lib/ircord"
 LOG_DIR="/var/log/ircord"

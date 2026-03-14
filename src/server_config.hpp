@@ -28,6 +28,9 @@ log_level = "info"
 # Maximum concurrent connections
 max_connections = 100
 
+# Public server - listed in the IRCord directory
+public = false
+
 [tls]
 # TLS certificate file (required)
 # Generate self-signed for testing:
@@ -36,6 +39,14 @@ cert_file = "./certs/server.crt"
 
 # TLS private key file (required)
 key_file = "./certs/server.key"
+
+[directory]
+# Directory service for public server listing
+# enabled = true    # Enable directory registration (requires public = true)
+# url = "https://directory.ircord.dev"  # Directory service URL
+# ping_interval_sec = 300  # How often to ping directory (default: 5 min)
+# server_name = "My IRCord Server"  # Display name in directory
+# description = "A friendly IRCord server"  # Short description
 
 [limits]
 # Maximum message size in bytes (64 KB default)

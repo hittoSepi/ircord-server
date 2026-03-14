@@ -130,6 +130,16 @@ struct ServerConfig {
     
     // [motd]
     std::string motd;                        // Message of the Day (empty = disabled)
+    
+    // [server] - public listing
+    bool is_public = false;                  // List this server in the public directory
+    
+    // [directory]
+    bool directory_enabled = false;          // Enable directory registration
+    std::string directory_url = "https://directory.ircord.dev";  // Directory service URL
+    int directory_ping_interval_sec = 300;   // How often to ping directory (5 min default)
+    std::string server_name;                 // Display name in directory
+    std::string server_description;          // Short description for directory
 };
 
 class ConfigLoader {

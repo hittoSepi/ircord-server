@@ -94,6 +94,7 @@ set(SERVER_SRC
     src/net/listener.cpp
     src/net/session.cpp
     src/net/tls_context.cpp
+    src/net/directory_client.cpp
     src/db/database.cpp
     src/db/user_store.cpp
     src/db/offline_store.cpp
@@ -114,6 +115,7 @@ set(SERVER_HDRS
     src/net/session.hpp
     src/net/tls_context.hpp
     src/net/rate_limiter.hpp
+    src/net/directory_client.hpp
     src/db/database.hpp
     src/db/user_store.hpp
     src/db/offline_store.hpp

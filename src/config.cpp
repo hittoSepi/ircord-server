@@ -66,6 +66,7 @@ namespace ircord {
 			config.port = static_cast<uint16_t>( get_required<int64_t>( server, "port" ) );
 			config.log_level = get_optional<std::string>( server, "log_level", "info" );
 			config.max_connections = get_optional<int>( server, "max_connections", 100 );
+			config.is_public = get_optional<bool>( server, "public", false );
 		} else {
 			throw std::runtime_error( "Missing required [server] section in config" );
 		}
@@ -132,6 +133,16 @@ namespace ircord {
 				// Single string
 				config.motd = motd_val.as_string();
 			}
+		}
+
+		// [directory] section - optional
+		if ( data.contains( "directory" ) ) {
+			const auto &dir = data.at( "directory" );
+			config.directory_enabled = get_optional<bool>( dir, "enabled", false );
+			config.directory_url = get_optional<std::string>( dir, "url", "https://directory.ircord.dev" );
+			config.directory_ping_interval_sec = get_optional<int>( dir, "ping_interval_sec", 300 );
+			config.server_name = get_optional<std::string>( dir, "server_name", "" );
+			config.server_description = get_optional<std::string>( dir, "description", "" );
 		}
 
 		return config;
