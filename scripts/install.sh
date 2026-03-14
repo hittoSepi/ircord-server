@@ -295,7 +295,7 @@ fi
 
 # Generate server.toml
 
-FILE_ENCRYPTION_KEY = $()
+FILE_ENCRYPTION_KEY = $(openssl rand --hex 32)
 
 cat > "$INSTALL_DIR/server.toml" <<EOF
 # IRCord Server Configuration
