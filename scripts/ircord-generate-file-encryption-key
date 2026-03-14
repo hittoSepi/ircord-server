@@ -1,3 +1,15 @@
 #!/bin/bash
+echo "IRCord FileSystem encypt key generator"
+echo;
 
-openssl rand -base64 32
+FILE_KEY=$(openssl rand -base64 32)
+
+CONFIG_CONTENT = $(tail /opt/ircord/server.toml)
+
+echo "CONFIG CONTENT:"
+echo ${CONFIG_CONTENT}
+echo;
+
+echo "HASH:"
+echo $FILE_KEY
+
