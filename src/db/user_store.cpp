@@ -52,6 +52,17 @@ void UserStore::insert(const User& user) {
     spdlog::debug("UserStore: inserted user {}", user.user_id);
 }
 
+void UserStore::update_identity_key(const std::string& user_id,
+                                     const std::vector<uint8_t>& new_identity_pub) {
+    std::lock_guard<std::mutex> lock(db_.mutex());
+    SQLite::Statement q(db_.get(),
+        "UPDATE users SET identity_pub = ? WHERE user_id = ?");
+    q.bind(1, new_identity_pub.data(), static_cast<int>(new_identity_pub.size()));
+    q.bind(2, user_id);
+    q.exec();
+    spdlog::info("UserStore: identity key updated for user {}", user_id);
+}
+
 void UserStore::upsert_signed_prekey(const std::string& user_id,
                                       const std::vector<uint8_t>& spk_pub,
                                       const std::vector<uint8_t>& spk_sig) {

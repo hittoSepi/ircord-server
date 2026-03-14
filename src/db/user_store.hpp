@@ -53,6 +53,12 @@ public:
      */
     bool has_password(const std::string& user_id);
 
+    /**
+     * Update identity public key for a user (used for key recovery).
+     */
+    void update_identity_key(const std::string& user_id,
+                              const std::vector<uint8_t>& new_identity_pub);
+
     void upsert_signed_prekey(const std::string& user_id,
                                const std::vector<uint8_t>& spk_pub,
                                const std::vector<uint8_t>& spk_sig);

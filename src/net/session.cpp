@@ -519,12 +519,37 @@ void Session::handle_auth_response(const AuthResponse& auth) {
     } else {
         // Known user — verify identity key matches stored key
         if (existing->identity_pub != presented_key) {
-            Error err;
-            err.set_code(4010);
-            err.set_message("Identity key mismatch");
-            send_envelope(MT_AUTH_FAIL, err);
-            disconnect("Auth failed: key mismatch");
-            return;
+            // Key mismatch — check if password-based key recovery is possible
+            if (!auth.password().empty() && us.has_password(auth.user_id())) {
+                if (us.verify_password(auth.user_id(), auth.password())) {
+                    // Password verified — update identity key
+                    us.update_identity_key(auth.user_id(), presented_key);
+                    spdlog::info("[{}] Identity key reset via password for user: {}",
+                                 remote_endpoint_, auth.user_id());
+
+                    // Update SPK if provided
+                    if (!auth.signed_prekey().empty() && !auth.spk_sig().empty()) {
+                        us.upsert_signed_prekey(
+                            auth.user_id(),
+                            std::vector<uint8_t>(auth.signed_prekey().begin(), auth.signed_prekey().end()),
+                            std::vector<uint8_t>(auth.spk_sig().begin(), auth.spk_sig().end()));
+                    }
+                } else {
+                    Error err;
+                    err.set_code(4012);
+                    err.set_message("Identity key mismatch and password incorrect");
+                    send_envelope(MT_AUTH_FAIL, err);
+                    disconnect("Auth failed: key mismatch + bad password");
+                    return;
+                }
+            } else {
+                Error err;
+                err.set_code(4010);
+                err.set_message("Identity key mismatch. Set a password with /password to enable key recovery.");
+                send_envelope(MT_AUTH_FAIL, err);
+                disconnect("Auth failed: key mismatch");
+                return;
+            }
         }
     }
 
