@@ -38,7 +38,10 @@ private:
     // Schedule next ping
     void schedule_next_ping();
 
-    // Perform HTTP POST request
+    // Build HTTP POST request string
+    std::string build_http_request(const std::string& path, const std::string& json_body);
+
+    // Perform HTTP POST request (supports both plain TCP and TLS)
     void post_request(const std::string& path, const std::string& json_body,
                       std::function<void(bool, const std::string&)> callback);
 

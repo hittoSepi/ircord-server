@@ -86,6 +86,7 @@ private:
     void notify_channel_join(const std::string& channel, const std::string& user_id);
     void notify_channel_part(const std::string& channel, const std::string& user_id, const std::string& reason);
     void send_user_list(const std::string& channel, SessionPtr session);
+    void broadcast_user_list(const std::string& channel);
 
     SessionFinder find_session_;
     BroadcastFunc broadcast_;

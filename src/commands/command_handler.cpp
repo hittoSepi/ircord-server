@@ -532,11 +532,11 @@ CommandResponse CommandHandler::cmd_mode(const std::vector<std::string>& args, S
 // ============================================================================
 
 void CommandHandler::notify_channel_join(const std::string& channel, const std::string& user_id) {
-    // TODO: Send presence update to all channel members
+    broadcast_user_list(channel);
 }
 
 void CommandHandler::notify_channel_part(const std::string& channel, const std::string& user_id, const std::string& reason) {
-    // TODO: Send presence update to all channel members
+    broadcast_user_list(channel);
 }
 
 void CommandHandler::send_user_list(const std::string& channel, SessionPtr session) {
@@ -557,6 +557,33 @@ void CommandHandler::send_user_list(const std::string& channel, SessionPtr sessi
     env.set_type(MT_COMMAND_RESPONSE);
     response.SerializeToString(env.mutable_payload());
     session->send(env);
+}
+
+void CommandHandler::broadcast_user_list(const std::string& channel) {
+    auto it = channels_.find(channel);
+    if (it == channels_.end()) return;
+
+    auto& chan = it->second;
+    std::string user_list = "Users in " + channel + ":\n";
+
+    for (const auto& uid : chan.members) {
+        std::string prefix = chan.operators.count(uid) ? "@" : (chan.voiced.count(uid) ? "+" : "");
+        std::string nick = user_id_to_nick_.count(uid) ? user_id_to_nick_[uid] : uid;
+        user_list += prefix + nick + "\n";
+    }
+
+    auto response = make_response(true, user_list, "names");
+    Envelope env;
+    env.set_type(MT_COMMAND_RESPONSE);
+    response.SerializeToString(env.mutable_payload());
+
+    // Send to all online channel members
+    for (const auto& uid : chan.members) {
+        auto session = find_session_(uid);
+        if (session) {
+            session->send(env);
+        }
+    }
 }
 
 void CommandHandler::broadcast_to_channel(const std::string& channel, const Envelope& env, SessionPtr exclude) {

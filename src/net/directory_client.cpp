@@ -136,21 +136,31 @@ void DirectoryClient::register_server() {
                         if (quote_end != std::string::npos) {
                             server_id_ = response.substr(quote_start + 1, quote_end - quote_start - 1);
                             registered_ = true;
-                            spdlog::info("Registered with directory service, server_id: {}", server_id_);
+                            spdlog::info("========================================");
+                            spdlog::info("Directory: REGISTERED SUCCESSFULLY");
+                            spdlog::info("  URL: {}:{}{}", directory_host_, directory_port_, directory_path_);
+                            spdlog::info("  Server ID: {}", server_id_);
+                            spdlog::info("  Ping interval: {}s", config_.directory_ping_interval_sec);
+                            spdlog::info("========================================");
                         }
                     }
                 }
-                
+
                 if (!registered_) {
                     last_error_ = "Registration response missing server_id";
-                    spdlog::warn("Directory registration failed: {}", last_error_);
+                    spdlog::warn("Directory: Registration failed - {}", last_error_);
                 }
-                
+
                 // Start periodic pings
                 schedule_next_ping();
             } else {
                 last_error_ = response;
-                spdlog::warn("Directory registration failed: {}", last_error_);
+                spdlog::error("========================================");
+                spdlog::error("Directory: REGISTRATION FAILED");
+                spdlog::error("  URL: {}:{}{}", directory_host_, directory_port_, directory_path_);
+                spdlog::error("  Error: {}", last_error_);
+                spdlog::error("  Will retry in {}s", config_.directory_ping_interval_sec);
+                spdlog::error("========================================");
                 // Retry after delay
                 schedule_next_ping();
             }
@@ -205,87 +215,134 @@ void DirectoryClient::schedule_next_ping() {
     });
 }
 
+// Parse HTTP response: extract status code and body
+static bool parse_http_response(const std::string& response, bool& success, std::string& body) {
+    size_t body_start = response.find("\r\n\r\n");
+    if (body_start == std::string::npos) return false;
+
+    body = response.substr(body_start + 4);
+    size_t status_pos = response.find(" ");
+    if (status_pos == std::string::npos) return false;
+
+    try {
+        int status_code = std::stoi(response.substr(status_pos + 1, 3));
+        success = (status_code >= 200 && status_code < 300);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+// Build HTTP POST request string
+std::string DirectoryClient::build_http_request(const std::string& path, const std::string& json_body) {
+    std::string full_path = directory_path_ + path;
+    std::ostringstream request;
+    request << "POST " << full_path << " HTTP/1.1\r\n";
+    request << "Host: " << directory_host_ << "\r\n";
+    request << "Content-Type: application/json\r\n";
+    request << "Content-Length: " << json_body.length() << "\r\n";
+    request << "Connection: close\r\n";
+    request << "\r\n";
+    request << json_body;
+    return request.str();
+}
+
+// Async read loop for plain TCP
+template<typename Socket>
+static void async_read_response(std::shared_ptr<Socket> socket,
+                                std::shared_ptr<std::string> response,
+                                std::shared_ptr<std::vector<char>> buffer,
+                                std::function<void(bool, const std::string&)> callback) {
+    socket->async_read_some(boost::asio::buffer(*buffer),
+        [socket, response, buffer, callback](boost::system::error_code ec, size_t bytes_transferred) {
+            if (!ec) {
+                response->append(buffer->data(), bytes_transferred);
+                async_read_response(socket, response, buffer, callback);
+            } else if (ec == boost::asio::error::eof ||
+                       ec == boost::asio::ssl::error::stream_truncated) {
+                bool success = false;
+                std::string body;
+                if (parse_http_response(*response, success, body)) {
+                    callback(success, body);
+                } else {
+                    callback(false, "Invalid HTTP response");
+                }
+            } else {
+                callback(false, "Read failed: " + ec.message());
+            }
+        });
+}
+
 void DirectoryClient::post_request(const std::string& path, const std::string& json_body,
                                    std::function<void(bool, const std::string&)> callback) {
     auto resolver = std::make_shared<tcp::resolver>(io_context_);
-    
+
     resolver->async_resolve(directory_host_, std::to_string(directory_port_),
         [this, self = shared_from_this(), path, json_body, callback, resolver](
             boost::system::error_code ec, tcp::resolver::results_type results) {
-            
+
             if (ec) {
                 callback(false, "DNS resolution failed: " + ec.message());
                 return;
             }
-            
-            auto socket = std::make_shared<tcp::socket>(io_context_);
-            boost::asio::async_connect(*socket, results,
-                [this, self, path, json_body, callback, socket](boost::system::error_code ec, const tcp::endpoint&) {
-                    
-                    if (ec) {
-                        callback(false, "Connection failed: " + ec.message());
-                        return;
-                    }
-                    
-                    // Build HTTP request
-                    std::string full_path = directory_path_ + path;
-                    std::ostringstream request;
-                    request << "POST " << full_path << " HTTP/1.1\r\n";
-                    request << "Host: " << directory_host_ << "\r\n";
-                    request << "Content-Type: application/json\r\n";
-                    request << "Content-Length: " << json_body.length() << "\r\n";
-                    request << "Connection: close\r\n";
-                    request << "\r\n";
-                    request << json_body;
-                    
-                    auto request_str = std::make_shared<std::string>(request.str());
-                    boost::asio::async_write(*socket, boost::asio::buffer(*request_str),
-                        [this, self, callback, socket, request_str](boost::system::error_code ec, size_t) {
-                            
-                            if (ec) {
-                                callback(false, "Request write failed: " + ec.message());
-                                return;
-                            }
-                            
-                            auto response = std::make_shared<std::string>();
-                            auto buffer = std::make_shared<std::vector<char>>(4096);
-                            
-                            std::function<void()> do_read;
-                            do_read = [this, self, callback, socket, response, buffer, &do_read]() {
-                                socket->async_read_some(boost::asio::buffer(*buffer),
-                                    [this, self, callback, socket, response, buffer, &do_read](
-                                        boost::system::error_code ec, size_t bytes_transferred) {
-                                        
-                                        if (!ec) {
-                                            response->append(buffer->data(), bytes_transferred);
-                                            do_read();
-                                        } else if (ec == boost::asio::error::eof) {
-                                            // Parse response
-                                            size_t body_start = response->find("\r\n\r\n");
-                                            if (body_start != std::string::npos) {
-                                                std::string body = response->substr(body_start + 4);
-                                                size_t status_pos = response->find(" ");
-                                                if (status_pos != std::string::npos) {
-                                                    try {
-                                                        int status_code = std::stoi(response->substr(status_pos + 1, 3));
-                                                        callback(status_code >= 200 && status_code < 300, body);
-                                                    } catch (...) {
-                                                        callback(false, "Invalid HTTP status code");
-                                                    }
-                                                } else {
-                                                    callback(false, "Invalid HTTP response");
-                                                }
-                                            } else {
-                                                callback(false, "Invalid HTTP response");
-                                            }
-                                        } else {
-                                            callback(false, "Read failed: " + ec.message());
+
+            auto request_str = std::make_shared<std::string>(build_http_request(path, json_body));
+
+            if (directory_use_ssl_) {
+                // SSL connection
+                auto ssl_ctx = std::make_shared<boost::asio::ssl::context>(boost::asio::ssl::context::tls_client);
+                ssl_ctx->set_default_verify_paths();
+
+                auto ssl_socket = std::make_shared<boost::asio::ssl::stream<tcp::socket>>(io_context_, *ssl_ctx);
+                SSL_set_tlsext_host_name(ssl_socket->native_handle(), directory_host_.c_str());
+
+                boost::asio::async_connect(ssl_socket->lowest_layer(), results,
+                    [this, self, callback, ssl_socket, ssl_ctx, request_str](
+                        boost::system::error_code ec, const tcp::endpoint&) {
+                        if (ec) {
+                            callback(false, "Connection failed: " + ec.message());
+                            return;
+                        }
+                        ssl_socket->async_handshake(boost::asio::ssl::stream_base::client,
+                            [this, self, callback, ssl_socket, ssl_ctx, request_str](boost::system::error_code ec) {
+                                if (ec) {
+                                    callback(false, "TLS handshake failed: " + ec.message());
+                                    return;
+                                }
+                                boost::asio::async_write(*ssl_socket, boost::asio::buffer(*request_str),
+                                    [self, callback, ssl_socket, ssl_ctx, request_str](boost::system::error_code ec, size_t) {
+                                        if (ec) {
+                                            callback(false, "Request write failed: " + ec.message());
+                                            return;
                                         }
+                                        auto response = std::make_shared<std::string>();
+                                        auto buffer = std::make_shared<std::vector<char>>(4096);
+                                        async_read_response(ssl_socket, response, buffer, callback);
                                     });
-                            };
-                            do_read();
-                        });
-                });
+                            });
+                    });
+            } else {
+                // Plain TCP connection
+                auto socket = std::make_shared<tcp::socket>(io_context_);
+                boost::asio::async_connect(*socket, results,
+                    [this, self, callback, socket, request_str](
+                        boost::system::error_code ec, const tcp::endpoint&) {
+                        if (ec) {
+                            callback(false, "Connection failed: " + ec.message());
+                            return;
+                        }
+                        boost::asio::async_write(*socket, boost::asio::buffer(*request_str),
+                            [self, callback, socket, request_str](boost::system::error_code ec, size_t) {
+                                if (ec) {
+                                    callback(false, "Request write failed: " + ec.message());
+                                    return;
+                                }
+                                auto response = std::make_shared<std::string>();
+                                auto buffer = std::make_shared<std::vector<char>>(4096);
+                                async_read_response(socket, response, buffer, callback);
+                            });
+                    });
+            }
         });
 }
 
