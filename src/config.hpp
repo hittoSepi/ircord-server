@@ -97,7 +97,7 @@ conn_rate_per_min = 10
 struct ServerConfig {
     // [server]
     std::string host = "0.0.0.0";
-    uint16_t port = 6667;
+    uint16_t port = 6697;
     std::string log_level = "info";
     int max_connections = 100;
 
