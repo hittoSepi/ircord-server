@@ -8,6 +8,8 @@
 #include "db/offline_store.hpp"
 #include "db/file_store.hpp"
 #include "security/virus_scanner.hpp"
+#include "admin/reserved_identity.hpp"
+#include "admin/server_owner.hpp"
 
 // HTTP API Server (optional)
 #ifdef IRCORD_HTTP_API_ENABLED
@@ -49,6 +51,13 @@ namespace ircord {
 		bool is_running() const {
 			return running_;
 		}
+		
+		// Get server owner (admin) identity
+		admin::ServerOwner* server_owner() { return server_owner_.get(); }
+		const admin::ServerOwner* server_owner() const { return server_owner_.get(); }
+		
+		// Get server config
+		const ServerConfig& config() const { return config_; }
 
 	private:
 		void setup_logging();
@@ -83,6 +92,9 @@ namespace ircord {
 		std::unique_ptr<ircord::api::Server> http_api_server_;
 		void setup_http_api_routes();
 #endif
+
+		// Server owner/admin identity (always online)
+		std::unique_ptr<admin::ServerOwner> server_owner_;
 
 		// Running state
 		std::atomic<bool> running_ { false };

@@ -124,6 +124,8 @@ set(SERVER_SRC
     src/crypto/file_encryptor.cpp
     src/security/virus_scanner.cpp
     src/voice/voice_room_manager.cpp
+    src/admin/reserved_identity.cpp
+    src/admin/server_owner.cpp
     ${PROTO_SRCS}
 )
 
@@ -131,6 +133,8 @@ set(SERVER_HDRS
     src/utils/string_utils.hpp
     src/server.hpp
     src/config.hpp
+    src/admin/reserved_identity.hpp
+    src/admin/server_owner.hpp
     src/net/listener.hpp
     src/net/session.hpp
     src/net/tls_context.hpp

@@ -1,5 +1,6 @@
 #include "server.hpp"
 #include "net/tls_context.hpp"
+#include "admin/reserved_identity.hpp"
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -114,6 +115,17 @@ Server::Server(const ServerConfig& config)
         spdlog::info("Directory client created for public server listing");
     } else if (config_.is_public && !config_.directory_enabled) {
         spdlog::warn("Server is marked public but directory registration is disabled");
+    }
+    
+    // Initialize server owner/admin identity
+    if (config_.admin_enabled) {
+        server_owner_ = std::make_unique<admin::ServerOwner>(*this, config_.admin_key_file);
+        if (server_owner_->is_initialized()) {
+            spdlog::info("Server owner identity initialized: user_id='{}'", 
+                        std::string(admin::ServerOwner::user_id()));
+        } else {
+            spdlog::error("Failed to initialize server owner identity!");
+        }
     }
 }
 

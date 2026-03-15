@@ -15,6 +15,39 @@ int64_t now_unix() {
 }
 } // anonymous namespace
 
+std::string UserStore::validate_user_id(const std::string& user_id,
+                                        const std::vector<std::string>& additional_reserved) {
+    // Check minimum length
+    if (user_id.length() < 2) {
+        return "User ID must be at least 2 characters";
+    }
+    
+    // Check maximum length
+    if (user_id.length() > 32) {
+        return "User ID must be at most 32 characters";
+    }
+    
+    // Check valid characters (alphanumeric, underscore, hyphen)
+    for (char c : user_id) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
+            return "User ID can only contain letters, numbers, underscores, and hyphens";
+        }
+    }
+    
+    // Check reserved names
+    if (ReservedIdentity::is_reserved(user_id, additional_reserved)) {
+        return "This user ID is reserved and cannot be used";
+    }
+    
+    // Check for unicode homoglyphs
+    if (ReservedIdentity::contains_unicode_homoglyphs(user_id)) {
+        return "User ID contains unsupported characters";
+    }
+    
+    // Valid
+    return "";
+}
+
 UserStore::UserStore(Database& db)
     : db_(db)
 {}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "database.hpp"
+#include "../admin/reserved_identity.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -26,6 +27,15 @@ public:
 
     std::optional<User> find_by_id(const std::string& user_id);
     void insert(const User& user);
+    
+    /**
+     * Validate if a user_id is acceptable (not reserved, proper format).
+     * @param user_id The proposed user ID
+     * @param additional_reserved Additional reserved patterns from config
+     * @return Empty string if valid, error message if invalid
+     */
+    static std::string validate_user_id(const std::string& user_id,
+                                       const std::vector<std::string>& additional_reserved = {});
     
     // Password authentication
     /**

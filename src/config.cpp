@@ -168,6 +168,38 @@ namespace ircord {
 			}
 		}
 
+		// [admin] section - optional
+		if ( data.contains( "admin" ) ) {
+			const auto &admin = data.at( "admin" );
+			config.admin_enabled = get_optional<bool>( admin, "enabled", true );
+			config.admin_key_file = get_optional<std::string>( admin, "key_file", "./keys/admin.ed25519" );
+			config.admin_tui_socket = get_optional<std::string>( admin, "tui_socket", "/run/ircord/admin.sock" );
+			
+			// Parse auto_join channels array
+			if ( admin.contains( "auto_join_channels" ) ) {
+				const auto &channels = admin.at( "auto_join_channels" );
+				if ( channels.is_array() ) {
+					for ( const auto &ch : channels.as_array() ) {
+						if ( ch.is_string() ) {
+							config.admin_auto_join.push_back( ch.as_string() );
+						}
+					}
+				}
+			}
+			
+			// Parse additional reserved patterns
+			if ( admin.contains( "additional_reserved" ) ) {
+				const auto &patterns = admin.at( "additional_reserved" );
+				if ( patterns.is_array() ) {
+					for ( const auto &pattern : patterns.as_array() ) {
+						if ( pattern.is_string() ) {
+							config.admin_additional_reserved.push_back( pattern.as_string() );
+						}
+					}
+				}
+			}
+		}
+
 		return config;
 	}
 

@@ -121,3 +121,16 @@ cors_enabled = true
 # Rate limiting
 rate_limit_enabled = true
 rate_limit_requests = 60  # requests per minute per IP
+
+[admin]
+# Server owner/admin configuration
+enabled = true                          # Enable reserved admin identity
+key_file = "./keys/admin.ed25519"       # Path to Ed25519 key file
+auto_join_channels = ["#general"]       # Channels admin auto-joins
+
+# Additional reserved nicknames/patterns (regex)
+# These prevent users from registering names similar to admin
+additional_reserved = []
+
+# TUI (admin interface) socket path
+tui_socket = "/run/ircord/admin.sock"

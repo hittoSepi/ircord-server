@@ -150,6 +150,13 @@ struct ServerConfig {
     bool http_api_cors = true;               // Enable CORS headers
     bool http_api_rate_limit = true;         // Enable rate limiting
     int http_api_rate_limit_requests = 60;   // Max requests per minute per IP
+    
+    // [admin]
+    bool admin_enabled = true;               // Enable server owner/admin identity
+    std::string admin_key_file = "./keys/admin.ed25519";  // Path to admin keys
+    std::vector<std::string> admin_auto_join; // Channels to auto-join
+    std::vector<std::string> admin_additional_reserved;  // Additional reserved patterns
+    std::string admin_tui_socket = "/run/ircord/admin.sock";  // TUI unix socket path
 };
 
 class ConfigLoader {
