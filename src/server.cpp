@@ -436,6 +436,21 @@ void Server::schedule_cleanup() {
 }
 
 #ifdef IRCORD_HAS_TUI
+
+void Server::send_admin_response(const std::string& cmd, bool ok,
+                                  const nlohmann::json& data,
+                                  const std::string& error) {
+    if (!admin_listener_) return;
+    nlohmann::json resp = {
+        {"type", "response"},
+        {"cmd", cmd},
+        {"ok", ok}
+    };
+    if (ok) resp["data"] = data;
+    else    resp["error"] = error;
+    admin_listener_->send_event(resp);
+}
+
 void Server::handle_admin_command(const nlohmann::json& cmd) {
     if (!cmd.contains("cmd")) return;
 
@@ -450,9 +465,13 @@ void Server::handle_admin_command(const nlohmann::json& cmd) {
             if (session) {
                 session->disconnect(reason);
                 spdlog::info("Admin kicked user: {}", user_id);
+                send_admin_response("kick", true, {{"user_id", user_id}});
             } else {
                 spdlog::warn("Admin kick: user {} not found", user_id);
+                send_admin_response("kick", false, {}, "User not found: " + user_id);
             }
+        } else {
+            send_admin_response("kick", false, {}, "Invalid user_id or no listener");
         }
     } else if (command == "ban") {
         std::string user_id = params.value("user_id", "");
@@ -463,6 +482,9 @@ void Server::handle_admin_command(const nlohmann::json& cmd) {
                 session->disconnect(reason);
             }
             spdlog::info("Admin banned user: {}", user_id);
+            send_admin_response("ban", true, {{"user_id", user_id}});
+        } else {
+            send_admin_response("ban", false, {}, "Invalid user_id or no listener");
         }
     } else if (command == "set_config") {
         std::string key = params.value("key", "");
@@ -481,13 +503,53 @@ void Server::handle_admin_command(const nlohmann::json& cmd) {
                 spdlog::info("Admin set MOTD = {}", value);
             } else {
                 spdlog::warn("Admin set_config: unknown key '{}'", key);
+                send_admin_response("set_config", false, {}, "Unknown key: " + key);
+                return;
             }
+            send_admin_response("set_config", true, {{"key", key}, {"value", value}});
         }
     } else if (command == "subscribe") {
-        // Acknowledge — events are sent to all connected TUI clients
-        spdlog::debug("Admin TUI subscribed to events");
+        spdlog::debug("Admin client subscribed to events");
+        send_admin_response("subscribe", true);
+    } else if (command == "status") {
+        auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - start_time_).count();
+        int conns = listener_ ? listener_->active_connection_count() : 0;
+        send_admin_response("status", true, {
+            {"uptime", uptime},
+            {"connections", conns},
+            {"version", std::string(ircord::kProjectVersion)}
+        });
+    } else if (command == "users") {
+        nlohmann::json users_json = nlohmann::json::array();
+        if (listener_) {
+            for (const auto& [uid, endpoint] : listener_->get_online_users()) {
+                users_json.push_back({
+                    {"id", uid},
+                    {"ip", endpoint},
+                    {"nickname", uid},
+                    {"connected", ""}
+                });
+            }
+        }
+        send_admin_response("users", true, users_json);
+    } else if (command == "shutdown") {
+        spdlog::info("Admin requested server shutdown");
+        send_admin_response("shutdown", true, {{"message", "Shutting down..."}});
+        // Post shutdown to io_context so response is sent first
+        boost::asio::post(ioc_, [this]() { shutdown(); });
+    } else if (command == "restart") {
+        spdlog::info("Admin requested server restart");
+        send_admin_response("restart", true, {{"message", "Restarting..."}});
+        // TODO: implement re-exec logic
+        boost::asio::post(ioc_, [this]() { shutdown(); });
+    } else if (command == "update") {
+        spdlog::info("Admin requested server update");
+        // TODO: implement git pull + rebuild logic
+        send_admin_response("update", false, {}, "Update not yet implemented server-side");
     } else {
         spdlog::warn("Unknown admin command: {}", command);
+        send_admin_response(command, false, {}, "Unknown command: " + command);
     }
 }
 
