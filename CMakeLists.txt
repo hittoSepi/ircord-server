@@ -227,9 +227,55 @@ configure_file(
     COPYONLY
 )
 
+add_custom_command(TARGET ircord-server POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+        "$<TARGET_FILE_DIR:ircord-server>/README.md"
+    COMMENT "Copying README.md to server output directory"
+)
+
 install(TARGETS ircord-server RUNTIME DESTINATION bin)
 
-#install(FILES config/server.toml.example DESTINATION config RENAME server.toml
+string(TOLOWER "${CMAKE_SYSTEM_NAME}" IRCORD_SERVER_RELEASE_SYSTEM)
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" IRCORD_SERVER_RELEASE_PROCESSOR)
+
+if(IRCORD_SERVER_RELEASE_SYSTEM STREQUAL "linux")
+    if(IRCORD_SERVER_RELEASE_PROCESSOR MATCHES "^(x86_64|amd64)$")
+        set(IRCORD_SERVER_RELEASE_PLATFORM "linux-x64")
+    elseif(IRCORD_SERVER_RELEASE_PROCESSOR MATCHES "^(aarch64|arm64)$")
+        set(IRCORD_SERVER_RELEASE_PLATFORM "linux-arm64")
+    else()
+        set(IRCORD_SERVER_RELEASE_PLATFORM "linux-${IRCORD_SERVER_RELEASE_PROCESSOR}")
+    endif()
+else()
+    set(IRCORD_SERVER_RELEASE_PLATFORM "${IRCORD_SERVER_RELEASE_SYSTEM}-${IRCORD_SERVER_RELEASE_PROCESSOR}")
+endif()
+
+set(IRCORD_SERVER_RELEASE_OUTPUT_DIR "${CMAKE_BINARY_DIR}/release" CACHE PATH "Directory where server release artifacts are generated")
+set(IRCORD_SERVER_RELEASE_ARCHIVE "ircord-server-${IRCORD_SERVER_RELEASE_PLATFORM}.tar.gz" CACHE STRING "Server release archive name")
+set(IRCORD_SERVER_RELEASE_SHA "${IRCORD_SERVER_RELEASE_ARCHIVE}.sha256" CACHE STRING "Server release checksum file name")
+
+add_custom_command(
+    OUTPUT
+        "${IRCORD_SERVER_RELEASE_OUTPUT_DIR}/${IRCORD_SERVER_RELEASE_ARCHIVE}"
+        "${IRCORD_SERVER_RELEASE_OUTPUT_DIR}/${IRCORD_SERVER_RELEASE_SHA}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${IRCORD_SERVER_RELEASE_OUTPUT_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E tar "cfz" "${IRCORD_SERVER_RELEASE_OUTPUT_DIR}/${IRCORD_SERVER_RELEASE_ARCHIVE}" --format=gnutar
+        "$<TARGET_FILE_NAME:ircord-server>"
+        README.md
+        server.toml
+    COMMAND ${CMAKE_COMMAND} -E sha256sum "${IRCORD_SERVER_RELEASE_OUTPUT_DIR}/${IRCORD_SERVER_RELEASE_ARCHIVE}" > "${IRCORD_SERVER_RELEASE_OUTPUT_DIR}/${IRCORD_SERVER_RELEASE_SHA}"
+    WORKING_DIRECTORY "$<TARGET_FILE_DIR:ircord-server>"
+    DEPENDS ircord-server
+    COMMENT "Creating server release archive ${IRCORD_SERVER_RELEASE_ARCHIVE}"
+    VERBATIM
+)
+
+add_custom_target(ircord-server_release
+    DEPENDS
+        "${IRCORD_SERVER_RELEASE_OUTPUT_DIR}/${IRCORD_SERVER_RELEASE_ARCHIVE}"
+        "${IRCORD_SERVER_RELEASE_OUTPUT_DIR}/${IRCORD_SERVER_RELEASE_SHA}"
+)
 
 
 enable_testing()

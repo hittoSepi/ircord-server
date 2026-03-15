@@ -2,20 +2,31 @@
 
 ## install.sh
 
-One-command installer for IRCord Server on Ubuntu/Debian.
+Stage-1 bootstrap for the IRCord Linux installer.
 
 ### Quick Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hittoSepi/ircord/main/ircord-server/scripts/install.sh | sudo bash
+curl -fsSL https://chat.rausku.com/downloads/install.sh | sudo bash
 ```
 
-Or download first:
+The bootstrap script does only four things:
+
+1. Detect Linux architecture
+2. Download the matching `ircord-installer` binary
+3. Elevate with `sudo` if needed
+4. Launch the installer wizard
+
+## install-legacy-build.sh
+
+Legacy source-build installer kept for maintainers and fallback use.
+
+### Legacy Usage
 
 ```bash
-wget https://raw.githubusercontent.com/hittoSepi/ircord/main/ircord-server/scripts/install.sh
-chmod +x install.sh
-sudo ./install.sh
+wget https://raw.githubusercontent.com/hittoSepi/ircord/main/ircord-server/scripts/install-legacy-build.sh
+chmod +x install-legacy-build.sh
+sudo ./install-legacy-build.sh
 ```
 
 ### What It Does

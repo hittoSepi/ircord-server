@@ -197,25 +197,36 @@ Servers can optionally register as public in the IRCord directory:
 
 ## Installation Script
 
-Quick server setup on Ubuntu/Debian:
+Quick server setup on Ubuntu/Debian with the stage-1 bootstrap:
 
 ```bash
-curl -fsSL https://your-domain/install.sh | sudo bash
+curl -fsSL https://chat.rausku.com/downloads/install.sh | sudo bash
 ```
 
-Or clone and run locally:
+The bootstrap script only:
+
+- Detects Linux architecture
+- Downloads the matching `ircord-installer` binary
+- Launches the installer wizard with `sudo` if needed
+
+For local testing, build or download `ircord-installer` and run it directly:
 
 ```bash
-cd ircord-server/scripts
-sudo ./install.sh
+./ircord-installer --manifest-url https://chat.rausku.com/downloads/installer-manifest.json
 ```
 
 The installer will:
-- Install dependencies (vcpkg, build tools)
-- Build the server
-- Configure SSL certificates (Let's Encrypt or self-signed)
+- Install runtime dependencies
+- Download the matching prebuilt `ircord-server` artifact
+- Configure SSL certificates (Let's Encrypt, self-signed, or existing certs)
 - Set up systemd service
-- Configure firewall (UFW)
+- Optionally configure firewall rules (UFW)
+
+Legacy source-build installer remains available at:
+
+```bash
+sudo ./scripts/install-legacy-build.sh
+```
 
 ## IRC Commands
 
