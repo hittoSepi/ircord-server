@@ -180,15 +180,24 @@ endif()
 option(IRCORD_SERVER_TUI "Build with TUI support" ON)
 
 if(IRCORD_SERVER_TUI)
+    include(FetchContent)
+    
+    # Check for local copy first (development workflow)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../ircord-server-tui/CMakeLists.txt")
-        message(STATUS "TUI support: Enabled")
+        message(STATUS "TUI support: Enabled (using local ircord-server-tui)")
         add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../ircord-server-tui ${CMAKE_BINARY_DIR}/ircord-server-tui)
-        target_link_libraries(ircord-server PRIVATE ircord-server-tui)
-        target_compile_definitions(ircord-server PRIVATE IRCORD_HAS_TUI)
     else()
-        message(WARNING "TUI support enabled but ircord-server-tui not found!")
-        set(IRCORD_SERVER_TUI OFF)
+        message(STATUS "TUI support: Enabled (fetching from git)")
+        FetchContent_Declare(
+            ircord-server-tui
+            GIT_REPOSITORY https://github.com/hittoSepi/ircord-server-tui.git
+            GIT_TAG main
+        )
+        FetchContent_MakeAvailable(ircord-server-tui)
     endif()
+    
+    target_link_libraries(ircord-server PRIVATE ircord-server-tui)
+    target_compile_definitions(ircord-server PRIVATE IRCORD_HAS_TUI)
 else()
     message(STATUS "TUI support: Disabled (enable with -DIRCORD_SERVER_TUI=ON)")
 endif()
