@@ -104,3 +104,20 @@ server_name = "Rausku IRCord Server"
 
 # Short description (max ~100 characters)
 description = "A friendly IRCord encrypted chat server"
+
+[http_api]
+# HTTP API server for external integrations (REST API)
+enabled = false
+port = 8080
+bind_address = "127.0.0.1"  # Use 0.0.0.0 for public access
+
+# API key authentication (empty = no auth, NOT recommended for production)
+# Generate secure key: openssl rand -hex 32
+api_keys = []
+
+# CORS for web clients
+cors_enabled = true
+
+# Rate limiting
+rate_limit_enabled = true
+rate_limit_requests = 60  # requests per minute per IP

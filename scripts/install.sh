@@ -95,6 +95,49 @@ prepare_turn_settings() {
     fi
 }
 
+prepare_http_api_settings() {
+    if [ -z "${IRCORD_HTTP_API_ENABLED:-}" ]; then
+        echo ""
+        echo "  HTTP API server provides REST API for external integrations"
+        echo "  (e.g., bug reports, webhooks, dashboards)"
+        read -rp "  Enable HTTP API server? (y/N) " -n 1 -r
+        echo ""
+        [[ $REPLY =~ ^[Yy]$ ]] && IRCORD_HTTP_API_ENABLED="yes" || IRCORD_HTTP_API_ENABLED="no"
+    fi
+
+    if [ "${IRCORD_HTTP_API_ENABLED}" != "yes" ]; then
+        IRCORD_HTTP_API_ENABLED="no"
+        return
+    fi
+
+    if [ -z "${IRCORD_HTTP_API_PORT:-}" ]; then
+        read -rp "  HTTP API port [8080]: " IRCORD_HTTP_API_PORT
+        echo ""
+    fi
+    IRCORD_HTTP_API_PORT="${IRCORD_HTTP_API_PORT:-8080}"
+
+    if [ -z "${IRCORD_HTTP_API_BIND:-}" ]; then
+        echo "  Bind address options:"
+        echo "    1) 127.0.0.1 - Local only (use with reverse proxy)"
+        echo "    2) 0.0.0.0   - All interfaces (public access)"
+        read -rp "  Select [1-2]: " BIND_OPTION
+        echo ""
+        case "$BIND_OPTION" in
+            2) IRCORD_HTTP_API_BIND="0.0.0.0" ;;
+            *) IRCORD_HTTP_API_BIND="127.0.0.1" ;;
+        esac
+    fi
+
+    if [ -z "${IRCORD_HTTP_API_KEY:-}" ]; then
+        local generated_key
+        generated_key="$(openssl rand -hex 32)"
+        echo "  API key for authentication (save this!)"
+        read -rp "  API key [${generated_key}]: " IRCORD_HTTP_API_KEY
+        echo ""
+        IRCORD_HTTP_API_KEY="${IRCORD_HTTP_API_KEY:-$generated_key}"
+    fi
+}
+
 detect_turn_external_ip() {
     local ip=""
     ip="$(getent ahostsv4 "$IRCORD_TURN_DOMAIN" 2>/dev/null | awk 'NR==1 {print $1; exit}')"
@@ -342,6 +385,7 @@ fi
 IRCORD_DIRECTORY_URL="${IRCORD_DIRECTORY_URL:-https://directory.ircord.dev}"
 
 prepare_turn_settings
+prepare_http_api_settings
 
 echo ""
 info "Configuration summary:"
@@ -355,6 +399,11 @@ echo "  TURN:       $IRCORD_TURN_ENABLED"
 if [ "$IRCORD_TURN_ENABLED" = "yes" ]; then
     echo "  TURN domain: $IRCORD_TURN_DOMAIN"
     echo "  TURN user:   $IRCORD_TURN_USERNAME"
+fi
+echo "  HTTP API:   $IRCORD_HTTP_API_ENABLED"
+if [ "$IRCORD_HTTP_API_ENABLED" = "yes" ]; then
+    echo "  API port:    $IRCORD_HTTP_API_PORT"
+    echo "  API bind:    $IRCORD_HTTP_API_BIND"
 fi
 echo "  Install:    $INSTALL_DIR"
 echo ""
@@ -501,6 +550,15 @@ url = "${IRCORD_DIRECTORY_URL}"
 ping_interval_sec = 300
 server_name = "${IRCORD_DOMAIN}"
 description = "An IRCord encrypted chat server"
+
+[http_api]
+enabled = $( [ "$IRCORD_HTTP_API_ENABLED" = "yes" ] && echo "true" || echo "false" )
+port = ${IRCORD_HTTP_API_PORT:-8080}
+bind_address = "${IRCORD_HTTP_API_BIND:-127.0.0.1}"
+api_keys = ["${IRCORD_HTTP_API_KEY:-}"]
+cors_enabled = true
+rate_limit_enabled = true
+rate_limit_requests = 60
 EOF
 ok "Config written: $INSTALL_DIR/server.toml"
 
@@ -553,6 +611,9 @@ if command -v ufw &>/dev/null; then
         ufw allow 5349/tcp comment "TURNS TCP" 2>/dev/null || true
         ufw allow 5349/udp comment "TURNS UDP" 2>/dev/null || true
         ufw allow 49160:49200/udp comment "TURN relay UDP" 2>/dev/null || true
+    fi
+    if [ "$IRCORD_HTTP_API_ENABLED" = "yes" ] && [ "${IRCORD_HTTP_API_BIND:-127.0.0.1}" = "0.0.0.0" ]; then
+        ufw allow "${IRCORD_HTTP_API_PORT:-8080}/tcp" comment "IRCord HTTP API" 2>/dev/null || true
     fi
     ufw --force enable 2>/dev/null || true
     ok "UFW configured"
@@ -620,6 +681,10 @@ echo -e "  Logs:     journalctl -u ircord-server -f"
 if [ "$IRCORD_TURN_ENABLED" = "yes" ]; then
     echo -e "  TURN:     ${CYAN}${IRCORD_TURN_DOMAIN}${NC} (3478 / 5349)"
     echo -e "  TURN cfg: ${TURN_CONFIG_PATH}"
+fi
+if [ "$IRCORD_HTTP_API_ENABLED" = "yes" ]; then
+    echo -e "  HTTP API: ${CYAN}http://${IRCORD_HTTP_API_BIND}:${IRCORD_HTTP_API_PORT}${NC}"
+    echo -e "  API Key:  ${CYAN}${IRCORD_HTTP_API_KEY}${NC}"
 fi
 echo ""
 
