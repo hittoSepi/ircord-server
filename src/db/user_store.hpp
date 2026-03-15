@@ -59,6 +59,8 @@ public:
     void update_identity_key(const std::string& user_id,
                               const std::vector<uint8_t>& new_identity_pub);
 
+    void clear_key_material(const std::string& user_id);
+
     void upsert_signed_prekey(const std::string& user_id,
                                const std::vector<uint8_t>& spk_pub,
                                const std::vector<uint8_t>& spk_sig);

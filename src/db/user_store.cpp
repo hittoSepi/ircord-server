@@ -63,6 +63,22 @@ void UserStore::update_identity_key(const std::string& user_id,
     spdlog::info("UserStore: identity key updated for user {}", user_id);
 }
 
+void UserStore::clear_key_material(const std::string& user_id) {
+    std::lock_guard<std::mutex> lock(db_.mutex());
+
+    SQLite::Statement clear_spk(db_.get(),
+        "DELETE FROM signed_prekeys WHERE user_id = ?");
+    clear_spk.bind(1, user_id);
+    clear_spk.exec();
+
+    SQLite::Statement clear_opk(db_.get(),
+        "DELETE FROM one_time_prekeys WHERE user_id = ?");
+    clear_opk.bind(1, user_id);
+    clear_opk.exec();
+
+    spdlog::info("UserStore: cleared key material for user {}", user_id);
+}
+
 void UserStore::upsert_signed_prekey(const std::string& user_id,
                                       const std::vector<uint8_t>& spk_pub,
                                       const std::vector<uint8_t>& spk_sig) {

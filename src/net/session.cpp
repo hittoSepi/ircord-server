@@ -514,6 +514,10 @@ void Session::handle_auth_response(const AuthResponse& auth) {
                 std::vector<uint8_t>(auth.signed_prekey().begin(), auth.signed_prekey().end()),
                 std::vector<uint8_t>(auth.spk_sig().begin(), auth.spk_sig().end()));
         }
+        if (!auth.password().empty() && !us.set_password(auth.user_id(), auth.password())) {
+            spdlog::warn("[{}] Failed to store recovery password for new user: {}",
+                         remote_endpoint_, auth.user_id());
+        }
 
         spdlog::info("[{}] Registered new user: {}", remote_endpoint_, auth.user_id());
     } else {
@@ -523,6 +527,7 @@ void Session::handle_auth_response(const AuthResponse& auth) {
             if (!auth.password().empty() && us.has_password(auth.user_id())) {
                 if (us.verify_password(auth.user_id(), auth.password())) {
                     // Password verified — update identity key
+                    us.clear_key_material(auth.user_id());
                     us.update_identity_key(auth.user_id(), presented_key);
                     spdlog::info("[{}] Identity key reset via password for user: {}",
                                  remote_endpoint_, auth.user_id());
@@ -549,6 +554,12 @@ void Session::handle_auth_response(const AuthResponse& auth) {
                 send_envelope(MT_AUTH_FAIL, err);
                 disconnect("Auth failed: key mismatch");
                 return;
+            }
+        } else if (!auth.password().empty() && !us.has_password(auth.user_id())) {
+            // Legacy accounts created before recovery-password support get backfilled on a normal login.
+            if (!us.set_password(auth.user_id(), auth.password())) {
+                spdlog::warn("[{}] Failed to backfill recovery password for user: {}",
+                             remote_endpoint_, auth.user_id());
             }
         }
     }
