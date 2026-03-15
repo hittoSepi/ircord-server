@@ -406,4 +406,16 @@ void Listener::cleanup_dead_sessions() {
     }
 }
 
+std::vector<std::pair<std::string, std::string>> Listener::get_online_users() const {
+    std::vector<std::pair<std::string, std::string>> result;
+    std::lock_guard<std::mutex> lock(sessions_mutex_);
+    result.reserve(sessions_by_user_.size());
+    for (const auto& [user_id, session] : sessions_by_user_) {
+        if (session && session->state() == SessionState::Established) {
+            result.emplace_back(user_id, session->remote_endpoint());
+        }
+    }
+    return result;
+}
+
 } // namespace ircord::net

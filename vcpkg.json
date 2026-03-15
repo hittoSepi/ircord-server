@@ -10,6 +10,7 @@
     "toml11",
     "spdlog",
     "libsodium",
-    "sqlitecpp"
+    "sqlitecpp",
+    "nlohmann-json"
   ]
 }

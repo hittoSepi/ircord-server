@@ -14,6 +14,13 @@
 #include <ircord/api/server.hpp>
 #endif
 
+// TUI (optional)
+#ifdef IRCORD_HAS_TUI
+#include <ircord/tui/admin_socket_listener.hpp>
+#include <ircord/tui/admin_tui.hpp>
+#include <ircord/tui/tui_log_sink.hpp>
+#endif
+
 #include <atomic>
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
@@ -87,6 +94,16 @@ namespace ircord {
 		std::optional<boost::asio::steady_timer> cleanup_timer_;
 		void schedule_cleanup();
 		static constexpr int kCleanupIntervalHours = 1;
+
+#ifdef IRCORD_HAS_TUI
+		std::shared_ptr<tui::AdminSocketListener> admin_listener_;
+		std::unique_ptr<std::thread> tui_thread_;
+		std::optional<boost::asio::steady_timer> state_timer_;
+		std::chrono::steady_clock::time_point start_time_;
+
+		void handle_admin_command(const nlohmann::json& cmd);
+		void send_periodic_state();
+#endif
 	};
 
 } // namespace ircord

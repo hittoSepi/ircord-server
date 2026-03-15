@@ -100,6 +100,7 @@ struct ServerConfig {
     uint16_t port = 6697;
     std::string log_level = "info";
     int max_connections = 100;
+    bool headless = false;  // --headless: no TUI
 
     // [tls]
     std::string tls_cert_file;

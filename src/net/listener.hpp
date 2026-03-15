@@ -76,6 +76,12 @@ public:
     // Set database reference (for command handler)
     void set_database(db::Database& db) { db_ = &db; }
 
+    // Get list of online users (user_id, remote_endpoint)
+    std::vector<std::pair<std::string, std::string>> get_online_users() const;
+
+    // Get current active connection count
+    int active_connection_count() const { return active_connections_.load(); }
+
 private:
     void do_accept();
     void on_signal(boost::system::error_code ec, int signal_number);
@@ -109,7 +115,7 @@ private:
     // Active sessions
     std::unordered_map<std::string, std::shared_ptr<Session>> sessions_by_user_;
     std::unordered_map<std::shared_ptr<Session>, std::string> users_by_session_;
-    std::mutex sessions_mutex_;
+    mutable std::mutex sessions_mutex_;
 
     // Config limits
     int ping_interval_sec_ = 30;

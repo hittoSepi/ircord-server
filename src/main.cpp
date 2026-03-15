@@ -49,6 +49,8 @@ ${args} [options]
 
 Options:
 	--config <path>   Path to configuration file (default: ./config/server.toml)
+	--headless        Run without TUI (daemon mode)
+	--daemon          Alias for --headless
 	--help, -h        Show this help message
 	--version, -V     Show version information
 
@@ -84,6 +86,7 @@ ${args} --config ./server.toml
 using namespace ircord;
 
 std::string config_path = get_default_config_path();
+bool headless_flag = false;
 
 int  parse_command_line( int argc, char *argv[] ) {
 	// Parse command line arguments
@@ -98,6 +101,11 @@ int  parse_command_line( int argc, char *argv[] ) {
 		if ( arg == "--version" || arg == "-V" ) {
 			print_version();
 			return 0;
+		}
+
+		if ( arg == "--headless" || arg == "--daemon" ) {
+			headless_flag = true;
+			continue;
 		}
 
 		if ( arg == "--config" ) {
@@ -125,6 +133,11 @@ int main( int argc, char *argv[] ) {
 	// Load configuration
 	ircord::ServerConfig config;
 	config = ircord::ConfigLoader::load( config_path );
+
+	// Apply command-line overrides
+	if ( headless_flag ) {
+		config.headless = true;
+	}
 
 	// Validate configuration
 	ircord::ConfigLoader::validate( config );

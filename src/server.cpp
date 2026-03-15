@@ -9,6 +9,10 @@
 #include <iostream>
 #include <csignal>
 
+#ifdef IRCORD_HAS_TUI
+#include "version.hpp"
+#endif
+
 namespace ircord {
 
 namespace {
@@ -242,6 +246,37 @@ void Server::run() {
     // Start thread pool
     create_thread_pool();
 
+#ifdef IRCORD_HAS_TUI
+    // Record start time for uptime calculation
+    start_time_ = std::chrono::steady_clock::now();
+
+    // Start admin socket listener
+    admin_listener_ = std::make_shared<tui::AdminSocketListener>(ioc_);
+    admin_listener_->set_command_callback([this](const nlohmann::json& cmd) {
+        handle_admin_command(cmd);
+    });
+    admin_listener_->start();
+
+    // Add spdlog sink for TUI
+    auto tui_sink = std::make_shared<tui::TuiLogSinkMt>(admin_listener_);
+    tui_sink->set_level(spdlog::level::debug);
+    spdlog::default_logger()->sinks().push_back(tui_sink);
+
+    // Start periodic state updates to TUI
+    state_timer_.emplace(ioc_);
+    send_periodic_state();
+
+    // Start TUI in integrated mode (unless headless)
+    if (!config_.headless) {
+        tui_thread_ = std::make_unique<std::thread>([this] {
+            tui::AdminTui tui;  // connects to default admin socket path
+            tui.run();
+            // TUI exited (Ctrl+D) - server keeps running
+            spdlog::info("TUI detached. Server continues running.");
+        });
+    }
+#endif
+
     spdlog::info("Server started. Press Ctrl+C to stop.");
 
     // Wait for shutdown
@@ -271,6 +306,19 @@ void Server::shutdown() {
     if (directory_client_) {
         directory_client_->stop();
     }
+
+#ifdef IRCORD_HAS_TUI
+    // Stop TUI admin socket
+    if (state_timer_) {
+        state_timer_->cancel();
+    }
+    if (admin_listener_) {
+        admin_listener_->stop();
+    }
+    if (tui_thread_ && tui_thread_->joinable()) {
+        tui_thread_->join();
+    }
+#endif
 
     // Stop accepting new connections
     if (listener_) {
@@ -374,5 +422,99 @@ void Server::schedule_cleanup() {
         schedule_cleanup();
     });
 }
+
+#ifdef IRCORD_HAS_TUI
+void Server::handle_admin_command(const nlohmann::json& cmd) {
+    if (!cmd.contains("cmd")) return;
+
+    std::string command = cmd["cmd"];
+    auto params = cmd.value("params", nlohmann::json::object());
+
+    if (command == "kick") {
+        std::string user_id = params.value("user_id", "");
+        std::string reason = params.value("reason", "Kicked by admin");
+        if (!user_id.empty() && listener_) {
+            auto session = listener_->find_session(user_id);
+            if (session) {
+                session->disconnect(reason);
+                spdlog::info("Admin kicked user: {}", user_id);
+            } else {
+                spdlog::warn("Admin kick: user {} not found", user_id);
+            }
+        }
+    } else if (command == "ban") {
+        std::string user_id = params.value("user_id", "");
+        std::string reason = params.value("reason", "Banned by admin");
+        if (!user_id.empty() && listener_) {
+            auto session = listener_->find_session(user_id);
+            if (session) {
+                session->disconnect(reason);
+            }
+            spdlog::info("Admin banned user: {}", user_id);
+        }
+    } else if (command == "set_config") {
+        std::string key = params.value("key", "");
+        std::string value = params.value("value", "");
+        if (listener_) {
+            if (key == "max_connections") {
+                int val = std::stoi(value);
+                listener_->set_max_connections(val);
+                spdlog::info("Admin set max_connections = {}", val);
+            } else if (key == "msg_rate_per_sec") {
+                int val = std::stoi(value);
+                listener_->set_rate_limits(val, -1);
+                spdlog::info("Admin set msg_rate_per_sec = {}", val);
+            } else if (key == "motd") {
+                listener_->set_motd(value);
+                spdlog::info("Admin set MOTD = {}", value);
+            } else {
+                spdlog::warn("Admin set_config: unknown key '{}'", key);
+            }
+        }
+    } else if (command == "subscribe") {
+        // Acknowledge — events are sent to all connected TUI clients
+        spdlog::debug("Admin TUI subscribed to events");
+    } else {
+        spdlog::warn("Unknown admin command: {}", command);
+    }
+}
+
+void Server::send_periodic_state() {
+    state_timer_->expires_after(std::chrono::seconds(2));
+    state_timer_->async_wait([this](const boost::system::error_code& ec) {
+        if (ec || !running_) return;
+        if (admin_listener_ && admin_listener_->has_client() && listener_) {
+            // Send users
+            auto online_users = listener_->get_online_users();
+            nlohmann::json users_json = nlohmann::json::array();
+            for (const auto& [uid, endpoint] : online_users) {
+                users_json.push_back({
+                    {"id", uid},
+                    {"ip", endpoint},
+                    {"nickname", uid},
+                    {"connected", ""}
+                });
+            }
+            admin_listener_->send_event({
+                {"type", "users"},
+                {"data", users_json}
+            });
+
+            // Send stats
+            auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - start_time_).count();
+            admin_listener_->send_event({
+                {"type", "stats"},
+                {"data", {
+                    {"uptime", uptime},
+                    {"connections", listener_->active_connection_count()},
+                    {"version", std::string(ircord::kProjectVersion)}
+                }}
+            });
+        }
+        send_periodic_state();
+    });
+}
+#endif
 
 } // namespace ircord
