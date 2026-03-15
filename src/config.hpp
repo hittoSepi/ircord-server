@@ -140,6 +140,15 @@ struct ServerConfig {
     int directory_ping_interval_sec = 300;   // How often to ping directory (5 min default)
     std::string server_name;                 // Display name in directory
     std::string server_description;          // Short description for directory
+    
+    // [http_api]
+    bool http_api_enabled = false;           // Enable HTTP API server
+    uint16_t http_api_port = 8080;           // HTTP API port
+    std::string http_api_bind = "127.0.0.1"; // Bind address (127.0.0.1 = local only)
+    std::vector<std::string> http_api_keys;  // API keys for authentication
+    bool http_api_cors = true;               // Enable CORS headers
+    bool http_api_rate_limit = true;         // Enable rate limiting
+    int http_api_rate_limit_requests = 60;   // Max requests per minute per IP
 };
 
 class ConfigLoader {

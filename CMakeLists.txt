@@ -66,6 +66,26 @@ endif()
 set(Boost_NO_BOOST_CMAKE ON)
 find_package(Boost REQUIRED)
 find_package(OpenSSL REQUIRED)
+
+# ──────────────────────────────────────────────
+# HTTP API Server (optional)
+# ──────────────────────────────────────────────
+option(IRCORD_ENABLE_HTTP_API "Enable HTTP API server" OFF)
+
+if(IRCORD_ENABLE_HTTP_API)
+    # Check if ircord-server-api exists as subdirectory
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ircord-server-api/CMakeLists.txt")
+        message(STATUS "HTTP API server: Enabled (using local ircord-server-api)")
+        add_subdirectory(ircord-server-api)
+        add_compile_definitions(IRCORD_HTTP_API_ENABLED)
+    else()
+        message(WARNING "HTTP API server enabled but ircord-server-api not found!")
+        message(WARNING "Clone it: git submodule add https://github.com/hittoSepi/ircord-server-api.git")
+        set(IRCORD_ENABLE_HTTP_API OFF)
+    endif()
+else()
+    message(STATUS "HTTP API server: Disabled (enable with -DIRCORD_ENABLE_HTTP_API=ON)")
+endif()
 find_package(Protobuf REQUIRED)
 find_package(absl CONFIG REQUIRED)
 find_package(spdlog REQUIRED)
@@ -146,6 +166,10 @@ target_link_libraries(ircord-server PRIVATE
     toml11::toml11
 )
 
+if(IRCORD_ENABLE_HTTP_API)
+    target_link_libraries(ircord-server PRIVATE ircord-server-api)
+endif()
+
 if(WIN32)
     if(TARGET absl::abseil_dll)
         target_link_libraries(ircord-server PRIVATE absl::abseil_dll)
@@ -173,10 +197,7 @@ configure_file(
 
 install(TARGETS ircord-server RUNTIME DESTINATION bin)
 
-install(
-    FILES config/server.toml.example
-    DESTINATION config
-    RENAME server.toml
-)
+#install(FILES config/server.toml.example DESTINATION config RENAME server.toml
+
 
 enable_testing()

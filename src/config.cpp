@@ -145,6 +145,29 @@ namespace ircord {
 			config.server_description = get_optional<std::string>( dir, "description", "" );
 		}
 
+		// [http_api] section - optional
+		if ( data.contains( "http_api" ) ) {
+			const auto &http = data.at( "http_api" );
+			config.http_api_enabled = get_optional<bool>( http, "enabled", false );
+			config.http_api_port = static_cast<uint16_t>( get_optional<int64_t>( http, "port", 8080 ) );
+			config.http_api_bind = get_optional<std::string>( http, "bind_address", "127.0.0.1" );
+			config.http_api_cors = get_optional<bool>( http, "cors_enabled", true );
+			config.http_api_rate_limit = get_optional<bool>( http, "rate_limit_enabled", true );
+			config.http_api_rate_limit_requests = get_optional<int>( http, "rate_limit_requests", 60 );
+			
+			// Parse api_keys array
+			if ( http.contains( "api_keys" ) ) {
+				const auto &keys = http.at( "api_keys" );
+				if ( keys.is_array() ) {
+					for ( const auto &key : keys.as_array() ) {
+						if ( key.is_string() ) {
+							config.http_api_keys.push_back( key.as_string() );
+						}
+					}
+				}
+			}
+		}
+
 		return config;
 	}
 

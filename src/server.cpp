@@ -221,6 +221,24 @@ void Server::run() {
         directory_client_->start();
     }
 
+#ifdef IRCORD_HTTP_API_ENABLED
+    // Start HTTP API server if enabled
+    if (config_.http_api_enabled) {
+        ircord::api::ServerConfig api_config;
+        api_config.port = config_.http_api_port;
+        api_config.bind_address = config_.http_api_bind;
+        api_config.api_keys = config_.http_api_keys;
+        api_config.cors_enabled = config_.http_api_cors;
+        api_config.rate_limit_enabled = config_.http_api_rate_limit;
+        api_config.rate_limit_requests = config_.http_api_rate_limit_requests;
+        
+        http_api_server_ = std::make_unique<ircord::api::Server>(ioc_, api_config);
+        setup_http_api_routes();
+        http_api_server_->start();
+        spdlog::info("HTTP API server started on {}:{}", config_.http_api_bind, config_.http_api_port);
+    }
+#endif
+
     // Start thread pool
     create_thread_pool();
 
@@ -241,6 +259,13 @@ void Server::shutdown() {
     }
 
     spdlog::info("Shutting down...");
+
+#ifdef IRCORD_HTTP_API_ENABLED
+    // Stop HTTP API server
+    if (http_api_server_) {
+        http_api_server_->stop();
+    }
+#endif
 
     // Stop directory client
     if (directory_client_) {
@@ -263,6 +288,73 @@ void Server::shutdown() {
 
     spdlog::info("Shutdown complete");
 }
+
+#ifdef IRCORD_HTTP_API_ENABLED
+void Server::setup_http_api_routes() {
+    if (!http_api_server_) return;
+    
+    // Health check endpoint (no auth required)
+    http_api_server_->get("/health", [](const auto& req) {
+        return ircord::api::Response::ok({
+            {"status", "ok"},
+            {"service", "ircord-server"}
+        });
+    });
+    
+    // Server info endpoint
+    http_api_server_->get("/api/v1/info", [this](const auto& req) {
+        return ircord::api::Response::ok({
+            {"name", config_.server_name},
+            {"version", "0.1.0"},
+            {"public", config_.is_public}
+        });
+    });
+    
+    // Bug report submission (public endpoint with rate limiting)
+    http_api_server_->post("/api/v1/bug-reports", [this](const auto& req) {
+        if (!req.has_json_body()) {
+            return ircord::api::Response::bad_request("JSON body required");
+        }
+        
+        auto body = req.json_body();
+        
+        if (!body.contains("description")) {
+            return ircord::api::Response::bad_request("Missing 'description' field");
+        }
+        
+        std::string description = body["description"];
+        std::string user_id = body.value("user_id", "anonymous");
+        
+        if (description.length() < 10) {
+            return ircord::api::Response::bad_request("Description too short (min 10 chars)");
+        }
+        
+        if (description.length() > 2000) {
+            return ircord::api::Response::bad_request("Description too long (max 2000 chars)");
+        }
+        
+        // TODO: Store bug report in database
+        // For now, just log it
+        spdlog::info("Bug report from {}: {}", user_id, description.substr(0, 50));
+        
+        return ircord::api::Response::created({
+            {"id", 1},
+            {"message", "Bug report submitted successfully"}
+        });
+    });
+    
+    // User count endpoint
+    http_api_server_->get("/api/v1/stats", [this](const auto& req) {
+        // TODO: Add actual stats when available
+        return ircord::api::Response::ok({
+            {"online_users", 0},
+            {"channels", 0}
+        });
+    });
+    
+    spdlog::info("HTTP API routes registered");
+}
+#endif
 
 void Server::schedule_cleanup() {
     cleanup_timer_->expires_after(std::chrono::hours(kCleanupIntervalHours));

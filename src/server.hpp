@@ -9,6 +9,11 @@
 #include "db/file_store.hpp"
 #include "security/virus_scanner.hpp"
 
+// HTTP API Server (optional)
+#ifdef IRCORD_HTTP_API_ENABLED
+#include <ircord/api/server.hpp>
+#endif
+
 #include <atomic>
 #include <boost/asio/executor_work_guard.hpp>
 #include <boost/asio/io_context.hpp>
@@ -65,6 +70,12 @@ namespace ircord {
 
 		// Directory client (for public server listing)
 		std::shared_ptr<DirectoryClient> directory_client_;
+
+		// HTTP API server (optional)
+#ifdef IRCORD_HTTP_API_ENABLED
+		std::unique_ptr<ircord::api::Server> http_api_server_;
+		void setup_http_api_routes();
+#endif
 
 		// Running state
 		std::atomic<bool> running_ { false };
